@@ -1,3 +1,6 @@
+package db
+
+const schema string = `
 CREATE TABLE IF NOT EXISTS "ref" (
 	"tag_id"	INTEGER NOT NULL,
 	"row_id"	INTEGER NOT NULL,
@@ -20,3 +23,4 @@ CREATE TABLE IF NOT EXISTS "tag" (
 	"updated_ts"	INTEGER DEFAULT 0,
 	PRIMARY KEY("id")
 );
+`
