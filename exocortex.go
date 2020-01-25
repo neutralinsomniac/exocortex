@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+
 	"github.com/neutralinsomniac/exocortex/db"
 )
 
@@ -11,7 +13,14 @@ func checkErr(err error) {
 }
 
 func main() {
-	err := db.Open("exocortex.db")
+	var db db.ExoDB
+	err := db.Open("./exocortex.db")
 	checkErr(err)
 	defer db.Close()
+
+	db.AddTag("test")
+
+	tags := db.GetTags()
+
+	fmt.Println(tags)
 }
