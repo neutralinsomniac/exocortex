@@ -25,7 +25,7 @@ func (e *ExoDB) AddTag(tag string) error {
 	if err != nil {
 		return err
 	}
-	statement.Exec(tag)
+	_, err = statement.Exec(tag)
 
 	return err
 }
