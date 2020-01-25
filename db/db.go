@@ -20,14 +20,23 @@ func (e *ExoDB) Close() {
 	e.conn.Close()
 }
 
-func (e *ExoDB) AddTag(tag string) {
-	statement, _ := e.conn.Prepare("INSERT INTO tag (name) VALUES (?)")
+func (e *ExoDB) AddTag(tag string) error {
+	statement, err := e.conn.Prepare("INSERT INTO tag (name) VALUES (?)")
+	if err != nil {
+		return err
+	}
 	statement.Exec(tag)
+
+	return err
 }
 
-func (e *ExoDB) GetTags() []string {
+func (e *ExoDB) GetTags() ([]string, error) {
 	var tags []string
-	rows, _ := e.conn.Query("SELECT name FROM tag")
+	rows, err := e.conn.Query("SELECT name FROM tag")
+
+	if err != nil {
+		return nil, err
+	}
 
 	var tag string
 	for rows.Next() {
@@ -35,5 +44,5 @@ func (e *ExoDB) GetTags() []string {
 		tags = append(tags, tag)
 	}
 
-	return tags
+	return tags, err
 }

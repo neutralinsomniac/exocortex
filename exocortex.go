@@ -18,9 +18,11 @@ func main() {
 	checkErr(err)
 	defer db.Close()
 
-	db.AddTag("test")
+	err = db.AddTag("test")
+	checkErr(err)
 
-	tags := db.GetTags()
+	tags, err := db.GetTags()
+	checkErr(err)
 
 	fmt.Println(tags)
 }
