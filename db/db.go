@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -11,8 +12,9 @@ type ExoDB struct {
 }
 
 type Tag struct {
-	id   int64
-	name string
+	id         int64
+	name       string
+	updated_ts int64
 }
 
 type Row struct {
@@ -46,23 +48,29 @@ func (e *ExoDB) Close() {
 func (e *ExoDB) AddTag(name string) (Tag, error) {
 	var tag Tag
 
-	statement, err := e.conn.Prepare("INSERT INTO tag (name) VALUES (?)")
+	statement, err := e.conn.Prepare("INSERT INTO tag (name, updated_ts) VALUES (?, ?)")
 	if err != nil {
 		return tag, err
 	}
-	res, err := statement.Exec(name)
+
+	res, err := statement.Exec(name, time.Now().UnixNano())
 	if err != nil {
 		return tag, err
 	}
-	tag.id, _ = res.LastInsertId()
-	tag.name = name
+
+	id, err := res.LastInsertId()
+	if err != nil {
+		return tag, err
+	}
+
+	tag, err = e.GetTagByID(id)
 
 	return tag, err
 }
 
 func (e *ExoDB) GetTags() ([]Tag, error) {
 	var tags []Tag
-	rows, err := e.conn.Query("SELECT id, name FROM tag ORDER BY updated_ts desc")
+	rows, err := e.conn.Query("SELECT id, name, updated_ts FROM tag ORDER BY updated_ts desc")
 
 	if err != nil {
 		return nil, err
@@ -70,7 +78,7 @@ func (e *ExoDB) GetTags() ([]Tag, error) {
 
 	var tag Tag
 	for rows.Next() {
-		rows.Scan(&tag.id, &tag.name)
+		rows.Scan(&tag.id, &tag.name, &tag.updated_ts)
 		tags = append(tags, tag)
 	}
 
@@ -79,9 +87,9 @@ func (e *ExoDB) GetTags() ([]Tag, error) {
 
 func (e *ExoDB) GetTagByID(id int64) (Tag, error) {
 	var tag Tag
-	row := e.conn.QueryRow("SELECT id, name FROM tag WHERE id = $1", id)
+	row := e.conn.QueryRow("SELECT id, name, updated_ts FROM tag WHERE id = $1", id)
 
-	switch err := row.Scan(&tag.id, &tag.name); err {
+	switch err := row.Scan(&tag.id, &tag.name, &tag.updated_ts); err {
 	case sql.ErrNoRows:
 		return Tag{}, nil
 	default:
