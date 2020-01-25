@@ -107,12 +107,12 @@ func (e *ExoDB) RenameTag(oldname string, newname string) error {
 		goto End
 	}
 
-	statement, err = tx.Prepare("UPDATE tag SET name = ? WHERE name = ?")
+	statement, err = tx.Prepare("UPDATE tag SET name = ?, updated_ts = ? WHERE name = ?")
 	if err != nil {
 		goto End
 	}
 
-	_, err = statement.Exec(newname, oldname)
+	_, err = statement.Exec(newname, time.Now().UnixNano(), oldname)
 	if err != nil {
 		goto End
 	}
@@ -129,6 +129,14 @@ End:
 	return err
 }
 
+func (e *ExoDB) AddRow(tag_id int64, text string, parent_row_id int64) error {
+	var err error
+
+	return err
+}
+
 func (e *ExoDB) UpdateRowText(row_id int64, text string) error {
-	return nil
+	var err error
+
+	return err
 }
