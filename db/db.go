@@ -51,8 +51,9 @@ func (e *ExoDB) incTxRefCount() error {
 func (e *ExoDB) decTxRefCount(commit bool) error {
 	var err error
 
-	if e.tx_refcount <= 0 {
+	if e.tx_refcount <= 0 && e.debug {
 		fmt.Println("decTxRefCount() called with refcount ==", e.tx_refcount)
+		debug.PrintStack()
 	}
 
 	e.tx_refcount--
