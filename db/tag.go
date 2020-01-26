@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
+	"github.com/mattn/go-sqlite3"
 )
 
 type Tag struct {
@@ -18,8 +18,7 @@ func (e *ExoDB) AddTag(name string) (Tag, error) {
 	var tag Tag
 	var err error
 	var statement *sql.Stmt
-	var id int64
-	var res sql.Result
+	var tagAlreadyAdded bool
 
 	err = e.incTxRefCount()
 	if err != nil {
@@ -31,17 +30,21 @@ func (e *ExoDB) AddTag(name string) (Tag, error) {
 		goto End
 	}
 
-	res, err = statement.Exec(name, time.Now().UnixNano())
-	if err != nil {
+	_, err = statement.Exec(name, time.Now().UnixNano())
+	// it's not an error if this tag name already exists
+	if sqliteErr, ok := err.(sqlite3.Error); ok {
+		if sqliteErr.ExtendedCode == sqlite3.ErrConstraintUnique {
+			tagAlreadyAdded = true
+		}
+	}
+	if err != nil && !tagAlreadyAdded {
 		goto End
 	}
 
-	id, err = res.LastInsertId()
+	tag, err = e.GetTagByName(name)
 	if err != nil {
 		goto End
 	}
-
-	tag, err = e.GetTagByID(id)
 
 End:
 	e.decTxRefCount(err == nil)

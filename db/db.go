@@ -3,6 +3,7 @@ package db
 import (
 	"database/sql"
 	"fmt"
+	"runtime/debug"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -11,6 +12,7 @@ type ExoDB struct {
 	conn        *sql.DB
 	tx          *sql.Tx
 	tx_refcount int
+	debug       bool
 }
 
 func (e *ExoDB) LoadSchema() error {
@@ -61,6 +63,10 @@ func (e *ExoDB) decTxRefCount(commit bool) error {
 			err = e.tx.Commit()
 			e.tx = nil
 		} else {
+			if e.debug {
+				fmt.Println("ROLLBACK")
+				debug.PrintStack()
+			}
 			err = e.tx.Rollback()
 			e.tx = nil
 		}

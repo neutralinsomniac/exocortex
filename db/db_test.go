@@ -17,6 +17,8 @@ func setupDB(t *testing.T) ExoDB {
 	var db ExoDB
 	var err error
 
+	db.debug = true
+
 	err = db.Open(":memory:")
 	if err != nil {
 		t.Fatal(err)
