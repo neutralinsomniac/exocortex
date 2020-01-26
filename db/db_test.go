@@ -1,6 +1,7 @@
 package db
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/mattn/go-sqlite3"
@@ -65,7 +66,52 @@ func TestAddDuplicateTag(t *testing.T) {
 	}
 }
 
-func TestGetTags(t *testing.T) {
+func TestGetTagByID(t *testing.T) {
+	var db ExoDB
+	var err error
+	var tag Tag
+
+	db = setupDB(t)
+
+	tag, err = db.AddTag("test")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tag, err = db.GetTagByID(tag.id)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestGetTagByName(t *testing.T) {
+	var db ExoDB
+	var err error
+	var tag Tag
+
+	db = setupDB(t)
+
+	tag, err = db.AddTag("test")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tag, err = db.AddTag("test2")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tag, err = db.GetTagByName("test")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if tag.name != "test" {
+		t.Fatal("returned tag name does not match expected (expected: test, got: " + tag.name + ")")
+	}
+}
+
+func TestGetAllTags(t *testing.T) {
 	var db ExoDB
 	var err error
 	var tags []Tag
@@ -87,13 +133,13 @@ func TestGetTags(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	tags, err = db.GetTags()
+	tags, err = db.GetAllTags()
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	if len(tags) != 3 {
-		t.Fatal("GetTags() did not return expected number of rows (expected: 3, got: " + string(len(tags)) + ")")
+		t.Fatal(fmt.Sprintf("GetAllTags() did not return expected number of rows (expected: 3, got: %d)", len(tags)))
 	}
 
 	if tags[0].name != "test3" {
@@ -136,13 +182,13 @@ func TestRenameTag(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	tags, err = db.GetTags()
+	tags, err = db.GetAllTags()
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	if len(tags) != 3 {
-		t.Fatal("GetTags() did not return expected number of rows (expected: 3, got: " + string(len(tags)) + ")")
+		t.Fatal("GetAllTags() did not return expected number of rows (expected: 3, got: " + string(len(tags)) + ")")
 	}
 
 	if tags[0].name != "test4" {
