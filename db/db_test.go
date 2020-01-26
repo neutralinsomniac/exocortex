@@ -80,7 +80,7 @@ func TestGetTagByID(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	tag, err = db.GetTagByID(tag.id)
+	_, err = db.GetTagByID(tag.id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,12 +93,12 @@ func TestGetTagByName(t *testing.T) {
 
 	db = setupDB(t)
 
-	tag, err = db.AddTag("test")
+	_, err = db.AddTag("test")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	tag, err = db.AddTag("test2")
+	_, err = db.AddTag("test2")
 	if err != nil {
 		t.Fatal(err)
 	}
