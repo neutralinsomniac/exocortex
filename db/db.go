@@ -59,18 +59,16 @@ func (e *ExoDB) decTxRefCount(commit bool) error {
 	e.tx_refcount--
 
 	// always rollback if we're called with commit == false (something went wrong)
-	if e.tx_refcount == 0 || commit == false {
-		if commit == true {
-			err = e.tx.Commit()
-			e.tx = nil
-		} else {
-			if e.debug {
-				fmt.Println("ROLLBACK")
-				debug.PrintStack()
-			}
-			err = e.tx.Rollback()
-			e.tx = nil
+	if commit == false {
+		if e.debug {
+			fmt.Println("ROLLBACK")
+			debug.PrintStack()
 		}
+		err = e.tx.Rollback()
+		e.tx = nil
+	} else if e.tx_refcount == 0 {
+		err = e.tx.Commit()
+		e.tx = nil
 	}
 
 	return err
