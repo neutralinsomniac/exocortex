@@ -176,7 +176,8 @@ func (e *ExoDB) GetTagByID(id int64) (Tag, error) {
 	}
 
 End:
-	e.decTxRefCount(err == nil)
+	// it's not an error to return no rows
+	e.decTxRefCount(err == nil || err == sql.ErrNoRows)
 
 	return tag, err
 }
@@ -199,7 +200,8 @@ func (e *ExoDB) GetTagByName(name string) (Tag, error) {
 	}
 
 End:
-	e.decTxRefCount(err == nil)
+	// it's not an error to return no rows
+	e.decTxRefCount(err == nil || err == sql.ErrNoRows)
 
 	return tag, err
 }
