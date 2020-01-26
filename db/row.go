@@ -39,6 +39,8 @@ func (e *ExoDB) GetRowsForTagID(tag_id int64) ([]Row, error) {
 	}
 
 End:
+	e.decTxRefCount(err == nil)
+
 	return rows, err
 }
 
@@ -49,7 +51,31 @@ func (e *ExoDB) AddRow(tag_id int64, text string, parent_row_id int64) error {
 }
 
 func (e *ExoDB) UpdateRowText(row_id int64, text string) error {
+	var statement *sql.Stmt
 	var err error
+
+	err = e.incTxRefCount()
+	if err != nil {
+		goto End
+	}
+
+	statement, err = e.tx.Prepare("UPDATE row SET text = ? WHERE id = ?")
+	if err != nil {
+		goto End
+	}
+
+	_, err = statement.Exec(text, row_id)
+	if err != nil {
+		goto End
+	}
+
+	// update all old refs to this row
+	// first remove all old refs
+
+	// now find new refs and create them
+
+End:
+	e.decTxRefCount(err == nil)
 
 	return err
 }

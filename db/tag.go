@@ -158,7 +158,7 @@ func (e *ExoDB) RenameTag(oldname string, newname string) error {
 		goto End
 	}
 
-	rows, err = e.GetRefsToTagByTagID(tag.id)
+	rows, err = e.GetRowsReferencingTagByTagID(tag.id)
 	if err != nil {
 		goto End
 	}
