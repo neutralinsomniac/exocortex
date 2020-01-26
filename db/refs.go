@@ -9,45 +9,14 @@ type Ref struct {
 	row_id int64
 }
 
-func (e *ExoDB) GetRowsReferencingTagByTagName(name string) ([]Row, error) {
-	var tag Tag
-	var rows []Row
-	var err error
-
-	err = e.incTxRefCount()
-	if err != nil {
-		goto End
-	}
-
-	tag, err = e.GetTagByName(name)
-	if err != nil {
-		goto End
-	}
-
-	rows, err = e.GetRowsReferencingTagByTagID(tag.id)
-	if err != nil {
-		goto End
-	}
-
-End:
-	e.decTxRefCount(err == nil)
-
-	return rows, err
-}
-
-func (e *ExoDB) GetRowsReferencingTagByTagID(tag_id int64) ([]Row, error) {
-	var rows []Row
-	var row Row
-	var err error
-	var sqlRows *sql.Rows
+func sqlGetRowsReferencingTagByTagID(tx *sql.Tx, tag_id int64) ([]Row, error) {
 	var statement *sql.Stmt
+	var sqlRows *sql.Rows
+	var row Row
+	var rows []Row
+	var err error
 
-	err = e.incTxRefCount()
-	if err != nil {
-		goto End
-	}
-
-	statement, err = e.tx.Prepare(`SELECT r.id, r.tag_id, r.parent_row_id, r.text, r.rank, r.updated_ts
+	statement, err = tx.Prepare(`SELECT r.id, r.tag_id, r.parent_row_id, r.text, r.rank, r.updated_ts
 								   FROM row as r, tag, ref
 								   WHERE tag.id = $1
 								   AND tag.id = ref.tag_id
@@ -72,7 +41,53 @@ func (e *ExoDB) GetRowsReferencingTagByTagID(tag_id int64) ([]Row, error) {
 	}
 
 End:
-	e.decTxRefCount(err == nil)
+	return rows, err
+}
+
+func (e *ExoDB) GetRowsReferencingTagByTagName(name string) ([]Row, error) {
+	var tx *sql.Tx
+	var tag Tag
+	var rows []Row
+	var err error
+
+	tx, err = e.conn.Begin()
+	if err != nil {
+		goto End
+	}
+
+	tag, err = sqlGetTagByName(tx, name)
+	if err != nil {
+		goto End
+	}
+
+	rows, err = sqlGetRowsReferencingTagByTagID(tx, tag.id)
+	if err != nil {
+		goto End
+	}
+
+End:
+	sqlCommitOrRollback(tx, err)
+
+	return rows, err
+}
+
+func (e *ExoDB) GetRowsReferencingTagByTagID(tag_id int64) ([]Row, error) {
+	var tx *sql.Tx
+	var rows []Row
+	var err error
+
+	tx, err = e.conn.Begin()
+	if err != nil {
+		goto End
+	}
+
+	rows, err = sqlGetRowsReferencingTagByTagID(tx, tag_id)
+	if err != nil {
+		goto End
+	}
+
+End:
+	sqlCommitOrRollback(tx, err)
 
 	return rows, err
 }

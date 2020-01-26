@@ -13,17 +13,12 @@ type Row struct {
 	updated_ts    int64
 }
 
-func (e *ExoDB) GetRowsForTagID(tag_id int64) ([]Row, error) {
+func sqlGetRowsForTagID(tx *sql.Tx, tag_id int64) ([]Row, error) {
 	var rows []Row
 	var sqlRows *sql.Rows
 	var err error
 
-	err = e.incTxRefCount()
-	if err != nil {
-		goto End
-	}
-
-	sqlRows, err = e.tx.Query("SELECT id, tag_id, rank, text, parent_row_id, updated_ts FROM rows WHERE tag_id = $1", tag_id)
+	sqlRows, err = tx.Query("SELECT id, tag_id, rank, text, parent_row_id, updated_ts FROM rows WHERE tag_id = $1", tag_id)
 	if err != nil {
 		goto End
 	}
@@ -39,7 +34,26 @@ func (e *ExoDB) GetRowsForTagID(tag_id int64) ([]Row, error) {
 	}
 
 End:
-	e.decTxRefCount(err == nil)
+	return rows, err
+}
+
+func (e *ExoDB) GetRowsForTagID(tag_id int64) ([]Row, error) {
+	var tx *sql.Tx
+	var rows []Row
+	var err error
+
+	tx, err = e.conn.Begin()
+	if err != nil {
+		goto End
+	}
+
+	rows, err = sqlGetRowsForTagID(tx, tag_id)
+	if err != nil {
+		goto End
+	}
+
+End:
+	sqlCommitOrRollback(tx, err)
 
 	return rows, err
 }
@@ -50,21 +64,34 @@ func (e *ExoDB) AddRow(tag_id int64, text string, parent_row_id int64) error {
 	return err
 }
 
-func (e *ExoDB) UpdateRowText(row_id int64, text string) error {
+func sqlUpdateRowText(tx *sql.Tx, row_id int64, text string) error {
 	var statement *sql.Stmt
 	var err error
 
-	err = e.incTxRefCount()
-	if err != nil {
-		goto End
-	}
-
-	statement, err = e.tx.Prepare("UPDATE row SET text = ? WHERE id = ?")
+	statement, err = tx.Prepare("UPDATE row SET text = ? WHERE id = ?")
 	if err != nil {
 		goto End
 	}
 
 	_, err = statement.Exec(text, row_id)
+	if err != nil {
+		goto End
+	}
+
+End:
+	return err
+}
+
+func (e *ExoDB) UpdateRowText(row_id int64, text string) error {
+	var tx *sql.Tx
+	var err error
+
+	tx, err = e.conn.Begin()
+	if err != nil {
+		goto End
+	}
+
+	err = sqlUpdateRowText(tx, row_id, text)
 	if err != nil {
 		goto End
 	}
@@ -75,7 +102,7 @@ func (e *ExoDB) UpdateRowText(row_id int64, text string) error {
 	// now find new refs and create them
 
 End:
-	e.decTxRefCount(err == nil)
+	sqlCommitOrRollback(tx, err)
 
 	return err
 }

@@ -2,17 +2,13 @@ package db
 
 import (
 	"database/sql"
-	"fmt"
-	"runtime/debug"
 
 	_ "github.com/mattn/go-sqlite3"
 )
 
 type ExoDB struct {
-	conn        *sql.DB
-	tx          *sql.Tx
-	tx_refcount int
-	debug       bool
+	conn  *sql.DB
+	debug bool
 }
 
 func (e *ExoDB) LoadSchema() error {
@@ -27,49 +23,13 @@ func (e *ExoDB) Open(filename string) error {
 }
 
 func (e *ExoDB) Close() {
-	e.tx_refcount = 0
-	e.tx = nil
 	e.conn.Close()
 }
 
-func (e *ExoDB) incTxRefCount() error {
-	var err error
-
-	if e.tx == nil {
-		e.tx, err = e.conn.Begin()
-	}
-
+func sqlCommitOrRollback(tx *sql.Tx, err error) {
 	if err != nil {
-		panic("e.conn.Begin returned: " + err.Error())
+		tx.Rollback()
+	} else {
+		tx.Commit()
 	}
-
-	e.tx_refcount++
-
-	return err
-}
-
-func (e *ExoDB) decTxRefCount(commit bool) error {
-	var err error
-
-	if e.tx_refcount <= 0 && e.debug {
-		fmt.Println("decTxRefCount() called with refcount ==", e.tx_refcount)
-		debug.PrintStack()
-	}
-
-	e.tx_refcount--
-
-	// always rollback if we're called with commit == false (something went wrong)
-	if commit == false {
-		if e.debug {
-			fmt.Println("ROLLBACK")
-			debug.PrintStack()
-		}
-		err = e.tx.Rollback()
-		e.tx = nil
-	} else if e.tx_refcount == 0 {
-		err = e.tx.Commit()
-		e.tx = nil
-	}
-
-	return err
 }

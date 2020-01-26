@@ -14,18 +14,11 @@ type Tag struct {
 	updated_ts int64
 }
 
-func (e *ExoDB) AddTag(name string) (Tag, error) {
-	var tag Tag
-	var err error
+func sqlAddTag(tx *sql.Tx, name string) error {
 	var statement *sql.Stmt
-	var tagAlreadyAdded bool
+	var err error
 
-	err = e.incTxRefCount()
-	if err != nil {
-		goto End
-	}
-
-	statement, err = e.tx.Prepare("INSERT INTO tag (name, updated_ts) VALUES (?, ?)")
+	statement, err = tx.Prepare("INSERT INTO tag (name, updated_ts) VALUES (?, ?)")
 	if err != nil {
 		goto End
 	}
@@ -34,36 +27,63 @@ func (e *ExoDB) AddTag(name string) (Tag, error) {
 	// it's not an error if this tag name already exists
 	if sqliteErr, ok := err.(sqlite3.Error); ok {
 		if sqliteErr.ExtendedCode == sqlite3.ErrConstraintUnique {
-			tagAlreadyAdded = true
+			err = nil
 		}
 	}
-	if err != nil && !tagAlreadyAdded {
-		goto End
-	}
-
-	tag, err = e.GetTagByName(name)
 	if err != nil {
 		goto End
 	}
 
 End:
-	e.decTxRefCount(err == nil)
-
-	return tag, err
+	return err
 }
 
-func (e *ExoDB) GetAllTags() ([]Tag, error) {
-	var tags []Tag
+func sqlGetTagByName(tx *sql.Tx, name string) (Tag, error) {
 	var tag Tag
+	var sqlRow *sql.Row
 	var err error
-	var sqlRows *sql.Rows
 
-	err = e.incTxRefCount()
+	sqlRow = tx.QueryRow("SELECT id, name, updated_ts FROM tag WHERE name = $1", name)
+
+	err = sqlRow.Scan(&tag.id, &tag.name, &tag.updated_ts)
 	if err != nil {
 		goto End
 	}
 
-	sqlRows, err = e.tx.Query("SELECT id, name, updated_ts FROM tag ORDER BY updated_ts desc")
+End:
+	return tag, err
+}
+
+func (e *ExoDB) AddTag(name string) (Tag, error) {
+	var tx *sql.Tx
+	var tag Tag
+	var err error
+
+	tx, err = e.conn.Begin()
+	if err != nil {
+		goto End
+	}
+
+	err = sqlAddTag(tx, name)
+
+	tag, err = sqlGetTagByName(tx, name)
+	if err != nil {
+		goto End
+	}
+
+End:
+	sqlCommitOrRollback(tx, err)
+
+	return tag, err
+}
+
+func sqlGetAllTags(tx *sql.Tx) ([]Tag, error) {
+	var tags []Tag
+	var tag Tag
+	var sqlRows *sql.Rows
+	var err error
+
+	sqlRows, err = tx.Query("SELECT id, name, updated_ts FROM tag ORDER BY updated_ts desc")
 	if err != nil {
 		goto End
 	}
@@ -78,22 +98,33 @@ func (e *ExoDB) GetAllTags() ([]Tag, error) {
 	}
 
 End:
-	e.decTxRefCount(err == nil)
-
 	return tags, err
 }
 
-func (e *ExoDB) GetTagByID(id int64) (Tag, error) {
-	var tag Tag
+func (e *ExoDB) GetAllTags() ([]Tag, error) {
+	var tags []Tag
+	var tx *sql.Tx
 	var err error
-	var sqlRow *sql.Row
 
-	err = e.incTxRefCount()
+	tx, err = e.conn.Begin()
 	if err != nil {
 		goto End
 	}
 
-	sqlRow = e.tx.QueryRow("SELECT id, name, updated_ts FROM tag WHERE id = $1", id)
+	tags, err = sqlGetAllTags(tx)
+
+End:
+	sqlCommitOrRollback(tx, err)
+
+	return tags, err
+}
+
+func sqlGetTagByID(tx *sql.Tx, id int64) (Tag, error) {
+	var tag Tag
+	var err error
+	var sqlRow *sql.Row
+
+	sqlRow = tx.QueryRow("SELECT id, name, updated_ts FROM tag WHERE id = $1", id)
 
 	err = sqlRow.Scan(&tag.id, &tag.name, &tag.updated_ts)
 	if err != nil {
@@ -101,8 +132,23 @@ func (e *ExoDB) GetTagByID(id int64) (Tag, error) {
 	}
 
 End:
-	// it's not an error to return no rows
-	e.decTxRefCount(err == nil || err == sql.ErrNoRows)
+	return tag, err
+}
+
+func (e *ExoDB) GetTagByID(id int64) (Tag, error) {
+	var tx *sql.Tx
+	var err error
+	var tag Tag
+
+	tx, err = e.conn.Begin()
+	if err != nil {
+		goto End
+	}
+
+	tag, err = sqlGetTagByID(tx, id)
+
+End:
+	sqlCommitOrRollback(tx, err)
 
 	return tag, err
 }
@@ -110,39 +156,26 @@ End:
 func (e *ExoDB) GetTagByName(name string) (Tag, error) {
 	var tag Tag
 	var err error
-	var sqlRow *sql.Row
+	var tx *sql.Tx
 
-	err = e.incTxRefCount()
+	tx, err = e.conn.Begin()
 	if err != nil {
 		goto End
 	}
 
-	sqlRow = e.tx.QueryRow("SELECT id, name, updated_ts FROM tag WHERE name = $1", name)
-
-	err = sqlRow.Scan(&tag.id, &tag.name, &tag.updated_ts)
-	if err != nil {
-		goto End
-	}
+	tag, err = sqlGetTagByName(tx, name)
 
 End:
-	// it's not an error to return no rows
-	e.decTxRefCount(err == nil || err == sql.ErrNoRows)
+	sqlCommitOrRollback(tx, err)
 
 	return tag, err
 }
 
-func (e *ExoDB) RenameTag(oldname string, newname string) error {
-	var rows []Row
-	var err error
+func sqlUpdateTagName(tx *sql.Tx, oldname string, newname string) error {
 	var statement *sql.Stmt
-	var tag Tag
+	var err error
 
-	err = e.incTxRefCount()
-	if err != nil {
-		goto End
-	}
-
-	statement, err = e.tx.Prepare("UPDATE tag SET name = ?, updated_ts = ? WHERE name = ?")
+	statement, err = tx.Prepare("UPDATE tag SET name = ?, updated_ts = ? WHERE name = ?")
 	if err != nil {
 		goto End
 	}
@@ -152,26 +185,46 @@ func (e *ExoDB) RenameTag(oldname string, newname string) error {
 		goto End
 	}
 
-	// Now update all rows that reference oldname
-	_, err = e.GetTagByName(newname)
+End:
+	return err
+}
+
+func (e *ExoDB) RenameTag(oldname string, newname string) error {
+	var rows []Row
+	var tx *sql.Tx
+	var tag Tag
+	var err error
+
+	tx, err = e.conn.Begin()
 	if err != nil {
 		goto End
 	}
 
-	rows, err = e.GetRowsReferencingTagByTagID(tag.id)
+	err = sqlUpdateTagName(tx, oldname, newname)
+	if err != nil {
+		goto End
+	}
+
+	// Now update all rows that reference oldname
+	tag, err = sqlGetTagByName(tx, newname)
+	if err != nil {
+		goto End
+	}
+
+	rows, err = sqlGetRowsReferencingTagByTagID(tx, tag.id)
 	if err != nil {
 		goto End
 	}
 
 	for _, row := range rows {
-		err = e.UpdateRowText(row.id, strings.ReplaceAll(row.text, "[["+oldname+"]]", "[["+newname+"]]"))
+		err = sqlUpdateRowText(tx, row.id, strings.ReplaceAll(row.text, "[["+oldname+"]]", "[["+newname+"]]"))
 		if err != nil {
 			goto End
 		}
 	}
 
 End:
-	e.decTxRefCount(err == nil)
+	sqlCommitOrRollback(tx, err)
 
 	return err
 }
