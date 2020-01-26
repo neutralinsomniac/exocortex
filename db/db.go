@@ -33,7 +33,6 @@ func (e *ExoDB) Close() {
 func (e *ExoDB) incTxRefCount() error {
 	var err error
 
-	fmt.Println("incTxRefCount() called. e.tx_refcount ==", e.tx_refcount)
 	if e.tx == nil {
 		e.tx, err = e.conn.Begin()
 	}
