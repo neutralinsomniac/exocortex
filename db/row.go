@@ -21,7 +21,7 @@ func sqlGetRowByID(tx *sql.Tx, id int64) (Row, error) {
 
 	sqlRow = tx.QueryRow("SELECT id, tag_id, text, rank, parent_row_id, updated_ts FROM row WHERE id = $1", id)
 
-	err = sqlRow.Scan(&row.id, &row.tag_id, &row.rank, &row.parent_row_id, &row.updated_ts)
+	err = sqlRow.Scan(&row.id, &row.tag_id, &row.text, &row.rank, &row.parent_row_id, &row.updated_ts)
 	if err != nil {
 		goto End
 	}
@@ -95,18 +95,18 @@ End:
 	return rows, err
 }
 
-func sqlAddRow(tx *sql.Tx, tag_id int64, text string, parent_row_id int64) (int64, error) {
+func sqlAddRow(tx *sql.Tx, tag_id int64, text string, parent_row_id int64, rank int) (int64, error) {
 	var statement *sql.Stmt
 	var res sql.Result
 	var row_id int64
 	var err error
 
-	statement, err = tx.Prepare("INSERT INTO ref (tag_id, text, parent_row_id, updated_ts) VALUES ($1, $2, $3, $4)")
+	statement, err = tx.Prepare("INSERT INTO row (tag_id, text, parent_row_id, rank, updated_ts) VALUES ($1, $2, $3, $4, $5)")
 	if err != nil {
 		goto End
 	}
 
-	res, err = statement.Exec(tag_id, text, parent_row_id, time.Now().UnixNano())
+	res, err = statement.Exec(tag_id, text, parent_row_id, rank, time.Now().UnixNano())
 	if err != nil {
 		goto End
 	}
@@ -120,7 +120,7 @@ End:
 	return row_id, err
 }
 
-func (e *ExoDB) AddRow(tag_id int64, text string, parent_row_id int64) (Row, error) {
+func (e *ExoDB) AddRow(tag_id int64, text string, parent_row_id int64, rank int) (Row, error) {
 	var tx *sql.Tx
 	var row Row
 	var row_id int64
@@ -131,7 +131,7 @@ func (e *ExoDB) AddRow(tag_id int64, text string, parent_row_id int64) (Row, err
 		goto End
 	}
 
-	row_id, err = sqlAddRow(tx, tag_id, text, parent_row_id)
+	row_id, err = sqlAddRow(tx, tag_id, text, parent_row_id, rank)
 	if err != nil {
 		goto End
 	}
