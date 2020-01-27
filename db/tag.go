@@ -190,8 +190,8 @@ End:
 }
 
 func (e *ExoDB) RenameTag(oldname string, newname string) error {
-	var rows []Row
 	var tx *sql.Tx
+	var refs Refs
 	var tag Tag
 	var err error
 
@@ -211,15 +211,17 @@ func (e *ExoDB) RenameTag(oldname string, newname string) error {
 		goto End
 	}
 
-	rows, err = sqlGetRowsReferencingTagByTagID(tx, tag.id)
+	refs, err = sqlGetRefsToTagByTagID(tx, tag.id)
 	if err != nil {
 		goto End
 	}
 
-	for _, row := range rows {
-		err = sqlUpdateRowText(tx, row.id, strings.ReplaceAll(row.text, "[["+oldname+"]]", "[["+newname+"]]"))
-		if err != nil {
-			goto End
+	for _, rows := range refs {
+		for _, row := range rows {
+			err = sqlUpdateRowText(tx, row.id, strings.ReplaceAll(row.text, "[["+oldname+"]]", "[["+newname+"]]"))
+			if err != nil {
+				goto End
+			}
 		}
 	}
 

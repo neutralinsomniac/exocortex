@@ -4,16 +4,52 @@ import (
 	"database/sql"
 )
 
-type Ref struct {
-	tag_id int64
-	row_id int64
+// all refs to a given tag
+// key is the tag the row(s) came from
+type Refs map[Tag][]Row
+
+func sqlAddRef(tx *sql.Tx, tag_id int64, row_id int64) error {
+	var statement *sql.Stmt
+	var err error
+
+	statement, err = tx.Prepare("INSERT INTO ref (tag_id, row_id) VALUES ($1, $2)")
+	if err != nil {
+		goto End
+	}
+
+	_, err = statement.Exec(tag_id, row_id)
+	if err != nil {
+		goto End
+	}
+
+End:
+	return err
 }
 
-func sqlGetRowsReferencingTagByTagID(tx *sql.Tx, tag_id int64) ([]Row, error) {
+func sqlClearRefsToRow(tx *sql.Tx, row_id int64) error {
+	var statement *sql.Stmt
+	var err error
+
+	statement, err = tx.Prepare("DELETE FROM ref WHERE row = $1")
+	if err != nil {
+		goto End
+	}
+
+	_, err = statement.Exec(row_id)
+	if err != nil {
+		goto End
+	}
+
+End:
+	return err
+}
+
+func sqlGetRefsToTagByTagID(tx *sql.Tx, tag_id int64) (Refs, error) {
 	var statement *sql.Stmt
 	var sqlRows *sql.Rows
+	var refs Refs
+	var tag Tag
 	var row Row
-	var rows []Row
 	var err error
 
 	statement, err = tx.Prepare(`SELECT r.id, r.tag_id, r.parent_row_id, r.text, r.rank, r.updated_ts
@@ -32,22 +68,29 @@ func sqlGetRowsReferencingTagByTagID(tx *sql.Tx, tag_id int64) ([]Row, error) {
 	}
 	defer sqlRows.Close()
 
+	refs = make(Refs)
 	for sqlRows.Next() {
 		err = sqlRows.Scan(&row.id, &row.tag_id, &row.parent_row_id, &row.text, &row.rank, &row.updated_ts)
 		if err != nil {
 			goto End
 		}
-		rows = append(rows, row)
+
+		tag, err = sqlGetTagByID(tx, row.tag_id)
+		if err != nil {
+			goto End
+		}
+
+		refs[tag] = append(refs[tag], row)
 	}
 
 End:
-	return rows, err
+	return refs, err
 }
 
-func (e *ExoDB) GetRowsReferencingTagByTagName(name string) ([]Row, error) {
+func (e *ExoDB) GetRefsToTagByTagName(name string) (Refs, error) {
 	var tx *sql.Tx
 	var tag Tag
-	var rows []Row
+	var refs Refs
 	var err error
 
 	tx, err = e.conn.Begin()
@@ -60,7 +103,7 @@ func (e *ExoDB) GetRowsReferencingTagByTagName(name string) ([]Row, error) {
 		goto End
 	}
 
-	rows, err = sqlGetRowsReferencingTagByTagID(tx, tag.id)
+	refs, err = sqlGetRefsToTagByTagID(tx, tag.id)
 	if err != nil {
 		goto End
 	}
@@ -68,12 +111,12 @@ func (e *ExoDB) GetRowsReferencingTagByTagName(name string) ([]Row, error) {
 End:
 	sqlCommitOrRollback(tx, err)
 
-	return rows, err
+	return refs, err
 }
 
-func (e *ExoDB) GetRowsReferencingTagByTagID(tag_id int64) ([]Row, error) {
+func (e *ExoDB) GetRefsToTagByTagID(tag_id int64) (Refs, error) {
 	var tx *sql.Tx
-	var rows []Row
+	var refs Refs
 	var err error
 
 	tx, err = e.conn.Begin()
@@ -81,7 +124,7 @@ func (e *ExoDB) GetRowsReferencingTagByTagID(tag_id int64) ([]Row, error) {
 		goto End
 	}
 
-	rows, err = sqlGetRowsReferencingTagByTagID(tx, tag_id)
+	refs, err = sqlGetRefsToTagByTagID(tx, tag_id)
 	if err != nil {
 		goto End
 	}
@@ -89,5 +132,5 @@ func (e *ExoDB) GetRowsReferencingTagByTagID(tag_id int64) ([]Row, error) {
 End:
 	sqlCommitOrRollback(tx, err)
 
-	return rows, err
+	return refs, err
 }
