@@ -14,8 +14,11 @@ type Tag struct {
 	updated_ts int64
 }
 
-func sqlAddTag(tx *sql.Tx, name string) error {
+func sqlAddTag(tx *sql.Tx, name string) (int64, error) {
 	var statement *sql.Stmt
+	var res sql.Result
+	var tag_id int64
+	var duplicateEntry bool
 	var err error
 
 	statement, err = tx.Prepare("INSERT INTO tag (name, updated_ts) VALUES (?, ?)")
@@ -23,19 +26,32 @@ func sqlAddTag(tx *sql.Tx, name string) error {
 		goto End
 	}
 
-	_, err = statement.Exec(name, time.Now().UnixNano())
+	res, err = statement.Exec(name, time.Now().UnixNano())
 	// it's not an error if this tag name already exists
 	if sqliteErr, ok := err.(sqlite3.Error); ok {
 		if sqliteErr.ExtendedCode == sqlite3.ErrConstraintUnique {
-			err = nil
+			duplicateEntry = true
 		}
 	}
-	if err != nil {
+	if err != nil && duplicateEntry == false {
 		goto End
 	}
 
+	if duplicateEntry == false {
+		tag_id, err = res.LastInsertId()
+		if err != nil {
+			goto End
+		}
+	} else {
+		tag, err := sqlGetTagByName(tx, name)
+		if err != nil {
+			goto End
+		}
+		tag_id = tag.id
+	}
+
 End:
-	return err
+	return tag_id, err
 }
 
 func sqlGetTagByName(tx *sql.Tx, name string) (Tag, error) {
@@ -57,6 +73,7 @@ End:
 func (e *ExoDB) AddTag(name string) (Tag, error) {
 	var tx *sql.Tx
 	var tag Tag
+	var tag_id int64
 	var err error
 
 	tx, err = e.conn.Begin()
@@ -64,9 +81,12 @@ func (e *ExoDB) AddTag(name string) (Tag, error) {
 		goto End
 	}
 
-	err = sqlAddTag(tx, name)
+	tag_id, err = sqlAddTag(tx, name)
+	if err != nil {
+		goto End
+	}
 
-	tag, err = sqlGetTagByName(tx, name)
+	tag, err = sqlGetTagByID(tx, tag_id)
 	if err != nil {
 		goto End
 	}
