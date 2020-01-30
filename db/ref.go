@@ -87,9 +87,27 @@ End:
 	return refs, err
 }
 
+func sqlGetRefsToTagByTagName(tx *sql.Tx, name string) (Refs, error) {
+	var refs Refs
+	var tag Tag
+	var err error
+
+	tag, err = sqlGetTagByName(tx, name)
+	if err != nil {
+		goto End
+	}
+
+	refs, err = sqlGetRefsToTagByTagID(tx, tag.id)
+	if err != nil {
+		goto End
+	}
+
+End:
+	return refs, err
+}
+
 func (e *ExoDB) GetRefsToTagByTagName(name string) (Refs, error) {
 	var tx *sql.Tx
-	var tag Tag
 	var refs Refs
 	var err error
 
@@ -98,12 +116,7 @@ func (e *ExoDB) GetRefsToTagByTagName(name string) (Refs, error) {
 		goto End
 	}
 
-	tag, err = sqlGetTagByName(tx, name)
-	if err != nil {
-		goto End
-	}
-
-	refs, err = sqlGetRefsToTagByTagID(tx, tag.id)
+	refs, err = sqlGetRefsToTagByTagName(tx, name)
 	if err != nil {
 		goto End
 	}
