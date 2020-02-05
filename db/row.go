@@ -6,12 +6,12 @@ import (
 )
 
 type Row struct {
-	id            int64
-	tag_id        int64
-	rank          int
-	text          string
-	parent_row_id int64
-	updated_ts    int64
+	id          int64
+	tagID       int64
+	rank        int
+	text        string
+	parentRowID int64
+	updatedTS   int64
 }
 
 func sqlGetRowByID(tx *sql.Tx, id int64) (Row, error) {
@@ -21,7 +21,7 @@ func sqlGetRowByID(tx *sql.Tx, id int64) (Row, error) {
 
 	sqlRow = tx.QueryRow("SELECT id, tag_id, text, rank, parent_row_id, updated_ts FROM row WHERE id = $1", id)
 
-	err = sqlRow.Scan(&row.id, &row.tag_id, &row.text, &row.rank, &row.parent_row_id, &row.updated_ts)
+	err = sqlRow.Scan(&row.id, &row.tagID, &row.text, &row.rank, &row.parentRowID, &row.updatedTS)
 	if err != nil {
 		goto End
 	}
@@ -50,12 +50,12 @@ End:
 	return row, err
 }
 
-func sqlGetRowsForTagID(tx *sql.Tx, tag_id int64) ([]Row, error) {
+func sqlGetRowsForTagID(tx *sql.Tx, tagID int64) ([]Row, error) {
 	var rows []Row
 	var sqlRows *sql.Rows
 	var err error
 
-	sqlRows, err = tx.Query("SELECT id, tag_id, rank, text, parent_row_id, updated_ts FROM rows WHERE tag_id = $1", tag_id)
+	sqlRows, err = tx.Query("SELECT id, tag_id, rank, text, parent_row_id, updated_ts FROM rows WHERE tag_id = $1", tagID)
 	if err != nil {
 		goto End
 	}
@@ -63,7 +63,7 @@ func sqlGetRowsForTagID(tx *sql.Tx, tag_id int64) ([]Row, error) {
 
 	for sqlRows.Next() {
 		var row Row
-		err = sqlRows.Scan(&row.id, &row.tag_id, &row.rank, &row.text, &row.parent_row_id, &row.updated_ts)
+		err = sqlRows.Scan(&row.id, &row.tagID, &row.rank, &row.text, &row.parentRowID, &row.updatedTS)
 		if err != nil {
 			goto End
 		}
@@ -74,7 +74,7 @@ End:
 	return rows, err
 }
 
-func (e *ExoDB) GetRowsForTagID(tag_id int64) ([]Row, error) {
+func (e *ExoDB) GetRowsForTagID(tagID int64) ([]Row, error) {
 	var tx *sql.Tx
 	var rows []Row
 	var err error
@@ -84,7 +84,7 @@ func (e *ExoDB) GetRowsForTagID(tag_id int64) ([]Row, error) {
 		goto End
 	}
 
-	rows, err = sqlGetRowsForTagID(tx, tag_id)
+	rows, err = sqlGetRowsForTagID(tx, tagID)
 	if err != nil {
 		goto End
 	}
@@ -95,10 +95,10 @@ End:
 	return rows, err
 }
 
-func sqlAddRow(tx *sql.Tx, tag_id int64, text string, parent_row_id int64, rank int) (int64, error) {
+func sqlAddRow(tx *sql.Tx, tagID int64, text string, parentRowID int64, rank int) (int64, error) {
 	var statement *sql.Stmt
 	var res sql.Result
-	var row_id int64
+	var rowID int64
 	var err error
 
 	statement, err = tx.Prepare("INSERT INTO row (tag_id, text, parent_row_id, rank, updated_ts) VALUES ($1, $2, $3, $4, $5)")
@@ -106,24 +106,24 @@ func sqlAddRow(tx *sql.Tx, tag_id int64, text string, parent_row_id int64, rank 
 		goto End
 	}
 
-	res, err = statement.Exec(tag_id, text, parent_row_id, rank, time.Now().UnixNano())
+	res, err = statement.Exec(tagID, text, parentRowID, rank, time.Now().UnixNano())
 	if err != nil {
 		goto End
 	}
 
-	row_id, err = res.LastInsertId()
+	rowID, err = res.LastInsertId()
 	if err != nil {
 		goto End
 	}
 
 End:
-	return row_id, err
+	return rowID, err
 }
 
-func (e *ExoDB) AddRow(tag_id int64, text string, parent_row_id int64, rank int) (Row, error) {
+func (e *ExoDB) AddRow(tagID int64, text string, parentRowID int64, rank int) (Row, error) {
 	var tx *sql.Tx
 	var row Row
-	var row_id int64
+	var rowID int64
 	var err error
 
 	tx, err = e.conn.Begin()
@@ -131,12 +131,12 @@ func (e *ExoDB) AddRow(tag_id int64, text string, parent_row_id int64, rank int)
 		goto End
 	}
 
-	row_id, err = sqlAddRow(tx, tag_id, text, parent_row_id, rank)
+	rowID, err = sqlAddRow(tx, tagID, text, parentRowID, rank)
 	if err != nil {
 		goto End
 	}
 
-	row, err = sqlGetRowByID(tx, row_id)
+	row, err = sqlGetRowByID(tx, rowID)
 	if err != nil {
 		goto End
 	}
@@ -145,7 +145,7 @@ End:
 	return row, err
 }
 
-func sqlUpdateRowText(tx *sql.Tx, row_id int64, text string) error {
+func sqlUpdateRowText(tx *sql.Tx, rowID int64, text string) error {
 	var statement *sql.Stmt
 	var err error
 
@@ -154,7 +154,7 @@ func sqlUpdateRowText(tx *sql.Tx, row_id int64, text string) error {
 		goto End
 	}
 
-	_, err = statement.Exec(text, row_id)
+	_, err = statement.Exec(text, rowID)
 	if err != nil {
 		goto End
 	}
@@ -163,7 +163,7 @@ End:
 	return err
 }
 
-func (e *ExoDB) UpdateRowText(row_id int64, text string) error {
+func (e *ExoDB) UpdateRowText(rowID int64, text string) error {
 	var tx *sql.Tx
 	var err error
 
@@ -172,13 +172,17 @@ func (e *ExoDB) UpdateRowText(row_id int64, text string) error {
 		goto End
 	}
 
-	err = sqlUpdateRowText(tx, row_id, text)
+	err = sqlUpdateRowText(tx, rowID, text)
 	if err != nil {
 		goto End
 	}
 
 	// update all old refs to this row
 	// first remove all old refs
+	err = sqlClearRefsToRow(tx, rowID)
+	if err != nil {
+		goto End
+	}
 
 	// now find new refs and create them
 

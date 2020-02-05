@@ -4,11 +4,10 @@ import (
 	"database/sql"
 )
 
-// all refs to a given tag
-// key is the tag the row(s) came from
+// Refs represents all refs to a given tag, where the key is the tag the row(s) came from
 type Refs map[Tag][]Row
 
-func sqlAddRef(tx *sql.Tx, tag_id int64, row_id int64) error {
+func sqlAddRef(tx *sql.Tx, tagID int64, rowID int64) error {
 	var statement *sql.Stmt
 	var err error
 
@@ -17,7 +16,7 @@ func sqlAddRef(tx *sql.Tx, tag_id int64, row_id int64) error {
 		goto End
 	}
 
-	_, err = statement.Exec(tag_id, row_id)
+	_, err = statement.Exec(tagID, rowID)
 	if err != nil {
 		goto End
 	}
@@ -26,7 +25,7 @@ End:
 	return err
 }
 
-func sqlClearRefsToRow(tx *sql.Tx, row_id int64) error {
+func sqlClearRefsToRow(tx *sql.Tx, rowID int64) error {
 	var statement *sql.Stmt
 	var err error
 
@@ -35,7 +34,7 @@ func sqlClearRefsToRow(tx *sql.Tx, row_id int64) error {
 		goto End
 	}
 
-	_, err = statement.Exec(row_id)
+	_, err = statement.Exec(rowID)
 	if err != nil {
 		goto End
 	}
@@ -44,7 +43,7 @@ End:
 	return err
 }
 
-func sqlGetRefsToTagByTagID(tx *sql.Tx, tag_id int64) (Refs, error) {
+func sqlGetRefsToTagByTagID(tx *sql.Tx, tagID int64) (Refs, error) {
 	var statement *sql.Stmt
 	var sqlRows *sql.Rows
 	var refs Refs
@@ -62,7 +61,7 @@ func sqlGetRefsToTagByTagID(tx *sql.Tx, tag_id int64) (Refs, error) {
 		goto End
 	}
 
-	sqlRows, err = statement.Query(tag_id)
+	sqlRows, err = statement.Query(tagID)
 	if err != nil {
 		goto End
 	}
@@ -70,12 +69,12 @@ func sqlGetRefsToTagByTagID(tx *sql.Tx, tag_id int64) (Refs, error) {
 
 	refs = make(Refs)
 	for sqlRows.Next() {
-		err = sqlRows.Scan(&row.id, &row.tag_id, &row.parent_row_id, &row.text, &row.rank, &row.updated_ts)
+		err = sqlRows.Scan(&row.id, &row.tagID, &row.parentRowID, &row.text, &row.rank, &row.updatedTS)
 		if err != nil {
 			goto End
 		}
 
-		tag, err = sqlGetTagByID(tx, row.tag_id)
+		tag, err = sqlGetTagByID(tx, row.tagID)
 		if err != nil {
 			goto End
 		}
@@ -127,7 +126,7 @@ End:
 	return refs, err
 }
 
-func (e *ExoDB) GetRefsToTagByTagID(tag_id int64) (Refs, error) {
+func (e *ExoDB) GetRefsToTagByTagID(tagID int64) (Refs, error) {
 	var tx *sql.Tx
 	var refs Refs
 	var err error
@@ -137,7 +136,7 @@ func (e *ExoDB) GetRefsToTagByTagID(tag_id int64) (Refs, error) {
 		goto End
 	}
 
-	refs, err = sqlGetRefsToTagByTagID(tx, tag_id)
+	refs, err = sqlGetRefsToTagByTagID(tx, tagID)
 	if err != nil {
 		goto End
 	}

@@ -9,15 +9,15 @@ import (
 )
 
 type Tag struct {
-	id         int64
-	name       string
-	updated_ts int64
+	id        int64
+	name      string
+	updatedTS int64
 }
 
 func sqlAddTag(tx *sql.Tx, name string) (int64, error) {
 	var statement *sql.Stmt
 	var res sql.Result
-	var tag_id int64
+	var tagID int64
 	var duplicateEntry bool
 	var err error
 
@@ -38,7 +38,7 @@ func sqlAddTag(tx *sql.Tx, name string) (int64, error) {
 	}
 
 	if duplicateEntry == false {
-		tag_id, err = res.LastInsertId()
+		tagID, err = res.LastInsertId()
 		if err != nil {
 			goto End
 		}
@@ -47,11 +47,11 @@ func sqlAddTag(tx *sql.Tx, name string) (int64, error) {
 		if err != nil {
 			goto End
 		}
-		tag_id = tag.id
+		tagID = tag.id
 	}
 
 End:
-	return tag_id, err
+	return tagID, err
 }
 
 func sqlGetTagByName(tx *sql.Tx, name string) (Tag, error) {
@@ -61,7 +61,7 @@ func sqlGetTagByName(tx *sql.Tx, name string) (Tag, error) {
 
 	sqlRow = tx.QueryRow("SELECT id, name, updated_ts FROM tag WHERE name = $1", name)
 
-	err = sqlRow.Scan(&tag.id, &tag.name, &tag.updated_ts)
+	err = sqlRow.Scan(&tag.id, &tag.name, &tag.updatedTS)
 	if err != nil {
 		goto End
 	}
@@ -73,7 +73,7 @@ End:
 func (e *ExoDB) AddTag(name string) (Tag, error) {
 	var tx *sql.Tx
 	var tag Tag
-	var tag_id int64
+	var tagID int64
 	var err error
 
 	tx, err = e.conn.Begin()
@@ -81,12 +81,12 @@ func (e *ExoDB) AddTag(name string) (Tag, error) {
 		goto End
 	}
 
-	tag_id, err = sqlAddTag(tx, name)
+	tagID, err = sqlAddTag(tx, name)
 	if err != nil {
 		goto End
 	}
 
-	tag, err = sqlGetTagByID(tx, tag_id)
+	tag, err = sqlGetTagByID(tx, tagID)
 	if err != nil {
 		goto End
 	}
@@ -110,7 +110,7 @@ func sqlGetAllTags(tx *sql.Tx) ([]Tag, error) {
 	defer sqlRows.Close()
 
 	for sqlRows.Next() {
-		err = sqlRows.Scan(&tag.id, &tag.name, &tag.updated_ts)
+		err = sqlRows.Scan(&tag.id, &tag.name, &tag.updatedTS)
 		if err != nil {
 			goto End
 		}
@@ -146,7 +146,7 @@ func sqlGetTagByID(tx *sql.Tx, id int64) (Tag, error) {
 
 	sqlRow = tx.QueryRow("SELECT id, name, updated_ts FROM tag WHERE id = $1", id)
 
-	err = sqlRow.Scan(&tag.id, &tag.name, &tag.updated_ts)
+	err = sqlRow.Scan(&tag.id, &tag.name, &tag.updatedTS)
 	if err != nil {
 		goto End
 	}
