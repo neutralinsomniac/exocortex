@@ -3,8 +3,6 @@ package db
 import (
 	"fmt"
 	"testing"
-
-	"github.com/mattn/go-sqlite3"
 )
 
 func TestAddTag(t *testing.T) {
@@ -32,14 +30,12 @@ func TestAddDuplicateTag(t *testing.T) {
 
 	_, err = db.AddTag("test")
 	if err != nil {
-		t.Fatal(err)
+		t.Fatal("AddTag failed: " + err.Error())
 	}
 
 	_, err = db.AddTag("test")
-	if sqliteErr, ok := err.(sqlite3.Error); ok {
-		if sqliteErr.ExtendedCode != sqlite3.ErrConstraintUnique {
-			t.Fatal("duplicate tag did not trigger constraint failure: " + err.Error())
-		}
+	if err != nil {
+		t.Fatal("AddTag failed: " + err.Error())
 	}
 }
 

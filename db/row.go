@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"regexp"
 	"time"
 )
 
@@ -55,7 +56,7 @@ func sqlGetRowsForTagID(tx *sql.Tx, tagID int64) ([]Row, error) {
 	var sqlRows *sql.Rows
 	var err error
 
-	sqlRows, err = tx.Query("SELECT id, tag_id, rank, text, parent_row_id, updated_ts FROM rows WHERE tag_id = $1", tagID)
+	sqlRows, err = tx.Query("SELECT id, tag_id, rank, text, parent_row_id, updated_ts FROM row WHERE tag_id = $1", tagID)
 	if err != nil {
 		goto End
 	}
@@ -142,6 +143,8 @@ func (e *ExoDB) AddRow(tagID int64, text string, parentRowID int64, rank int) (R
 	}
 
 End:
+	sqlCommitOrRollback(tx, err)
+
 	return row, err
 }
 
@@ -165,6 +168,9 @@ End:
 
 func (e *ExoDB) UpdateRowText(rowID int64, text string) error {
 	var tx *sql.Tx
+	var tagID int64
+	var newTags [][]string
+	var re *regexp.Regexp
 	var err error
 
 	tx, err = e.conn.Begin()
@@ -185,7 +191,16 @@ func (e *ExoDB) UpdateRowText(rowID int64, text string) error {
 	}
 
 	// now find new refs and create them
+	re = regexp.MustCompile(`\[\[(.*?)\]\]`)
+	newTags = re.FindAllStringSubmatch(text, -1)
 
+	for _, newTag := range newTags {
+		tagID, err = sqlAddTag(tx, newTag[1])
+		if err != nil {
+			goto End
+		}
+		sqlAddRef(tx, tagID, rowID)
+	}
 End:
 	sqlCommitOrRollback(tx, err)
 

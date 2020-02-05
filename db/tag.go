@@ -18,6 +18,7 @@ func sqlAddTag(tx *sql.Tx, name string) (int64, error) {
 	var statement *sql.Stmt
 	var res sql.Result
 	var tagID int64
+	var tag Tag
 	var duplicateEntry bool
 	var err error
 
@@ -43,7 +44,7 @@ func sqlAddTag(tx *sql.Tx, name string) (int64, error) {
 			goto End
 		}
 	} else {
-		tag, err := sqlGetTagByName(tx, name)
+		tag, err = sqlGetTagByName(tx, name)
 		if err != nil {
 			goto End
 		}
