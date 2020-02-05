@@ -92,7 +92,6 @@ func (e *ExoDB) GetRowsForTagID(tagID int64) ([]Row, error) {
 
 End:
 	sqlCommitOrRollback(tx, err)
-
 	return rows, err
 }
 
@@ -137,6 +136,11 @@ func (e *ExoDB) AddRow(tagID int64, text string, parentRowID int64, rank int) (R
 		goto End
 	}
 
+	err = sqlUpdateRefsForRowID(tx, rowID)
+	if err != nil {
+		goto End
+	}
+
 	row, err = sqlGetRowByID(tx, rowID)
 	if err != nil {
 		goto End
@@ -144,7 +148,6 @@ func (e *ExoDB) AddRow(tagID int64, text string, parentRowID int64, rank int) (R
 
 End:
 	sqlCommitOrRollback(tx, err)
-
 	return row, err
 }
 
@@ -166,11 +169,43 @@ End:
 	return err
 }
 
-func (e *ExoDB) UpdateRowText(rowID int64, text string) error {
-	var tx *sql.Tx
+func sqlUpdateRefsForRowID(tx *sql.Tx, rowID int64) error {
 	var tagID int64
+	var row Row
 	var newTags [][]string
 	var re *regexp.Regexp
+	var err error
+
+	// update all old refs to this row
+	// first remove all old refs
+	err = sqlClearRefsToRow(tx, rowID)
+	if err != nil {
+		goto End
+	}
+
+	row, err = sqlGetRowByID(tx, rowID)
+	if err != nil {
+		goto End
+	}
+
+	// now find new refs and create them
+	re = regexp.MustCompile(`\[\[(.*?)\]\]`)
+	newTags = re.FindAllStringSubmatch(row.text, -1)
+
+	for _, newTag := range newTags {
+		tagID, err = sqlAddTag(tx, newTag[1])
+		if err != nil {
+			goto End
+		}
+		sqlAddRef(tx, tagID, rowID)
+	}
+
+End:
+	return err
+
+}
+func (e *ExoDB) UpdateRowText(rowID int64, text string) error {
+	var tx *sql.Tx
 	var err error
 
 	tx, err = e.conn.Begin()
@@ -183,26 +218,12 @@ func (e *ExoDB) UpdateRowText(rowID int64, text string) error {
 		goto End
 	}
 
-	// update all old refs to this row
-	// first remove all old refs
-	err = sqlClearRefsToRow(tx, rowID)
+	err = sqlUpdateRefsForRowID(tx, rowID)
 	if err != nil {
 		goto End
 	}
 
-	// now find new refs and create them
-	re = regexp.MustCompile(`\[\[(.*?)\]\]`)
-	newTags = re.FindAllStringSubmatch(text, -1)
-
-	for _, newTag := range newTags {
-		tagID, err = sqlAddTag(tx, newTag[1])
-		if err != nil {
-			goto End
-		}
-		sqlAddRef(tx, tagID, rowID)
-	}
 End:
 	sqlCommitOrRollback(tx, err)
-
 	return err
 }

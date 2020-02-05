@@ -29,7 +29,7 @@ func sqlClearRefsToRow(tx *sql.Tx, rowID int64) error {
 	var statement *sql.Stmt
 	var err error
 
-	statement, err = tx.Prepare("DELETE FROM ref WHERE row = $1")
+	statement, err = tx.Prepare("DELETE FROM ref WHERE row_id = $1")
 	if err != nil {
 		goto End
 	}
