@@ -176,8 +176,8 @@ End:
 
 func (e *ExoDB) GetTagByName(name string) (Tag, error) {
 	var tag Tag
-	var err error
 	var tx *sql.Tx
+	var err error
 
 	tx, err = e.conn.Begin()
 	if err != nil {
@@ -190,6 +190,43 @@ End:
 	sqlCommitOrRollback(tx, err)
 
 	return tag, err
+}
+
+func sqlDeleteTagByID(tx *sql.Tx, id int64) error {
+	var statement *sql.Stmt
+	var err error
+
+	statement, err = tx.Prepare("DELETE FROM tag WHERE id = ?")
+	if err != nil {
+		goto End
+	}
+
+	_, err = statement.Exec(id)
+	if err != nil {
+		goto End
+	}
+
+End:
+	return err
+}
+
+func (e *ExoDB) DeleteTagByID(id int64) error {
+	var tx *sql.Tx
+	var err error
+
+	tx, err = e.conn.Begin()
+	if err != nil {
+		goto End
+	}
+
+	err = sqlDeleteTagByID(tx, id)
+	if err != nil {
+		goto End
+	}
+
+End:
+	sqlCommitOrRollback(tx, err)
+	return err
 }
 
 func sqlUpdateTagName(tx *sql.Tx, oldname string, newname string) error {

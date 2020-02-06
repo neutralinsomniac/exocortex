@@ -174,3 +174,49 @@ func TestRenameTag(t *testing.T) {
 		t.Error("Third tag != expected (expected: test2, got: " + tags[2].name + ")")
 	}
 }
+
+func TestDeleteTagByID(t *testing.T) {
+	var db ExoDB
+	var err error
+	var tag1, tag2 Tag
+	var tags []Tag
+
+	db = setupDB(t)
+
+	tag1, err = db.AddTag("test")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tag2, err = db.AddTag("test2")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tags, err = db.GetAllTags()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(tags) != 2 {
+		t.Fatal(fmt.Sprintf("Exected 2 tags, got: %d", len(tags)))
+	}
+
+	err = db.DeleteTagByID(tag1.id)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tags, err = db.GetAllTags()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(tags) != 1 {
+		t.Fatal(fmt.Sprintf("Exected 1 tag, got: %d", len(tags)))
+	}
+
+	if tags[0].name != tag2.name {
+		t.Fatal(fmt.Sprintf("Remaining tag name (%s) did not match expected (%s)", tags[0].name, tag2.name))
+	}
+}
