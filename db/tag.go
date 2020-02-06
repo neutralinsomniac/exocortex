@@ -140,6 +140,23 @@ End:
 	return tags, err
 }
 
+func sqlUpdateTagTS(tx *sql.Tx, id int64) error {
+	var statement *sql.Stmt
+	var err error
+
+	statement, err = tx.Prepare("UPDATE tag SET updated_ts = ? WHERE id = ?")
+	if err != nil {
+		goto End
+	}
+
+	_, err = statement.Exec(time.Now().UnixNano(), id)
+	if err != nil {
+		goto End
+	}
+
+End:
+	return err
+}
 func sqlGetTagByID(tx *sql.Tx, id int64) (Tag, error) {
 	var tag Tag
 	var err error

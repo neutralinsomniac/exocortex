@@ -116,6 +116,11 @@ func sqlAddRow(tx *sql.Tx, tagID int64, text string, parentRowID int64, rank int
 		goto End
 	}
 
+	err = sqlUpdateTagTS(tx, tagID)
+	if err != nil {
+		goto End
+	}
+
 End:
 	return rowID, err
 }
@@ -153,6 +158,7 @@ End:
 
 func sqlUpdateRowText(tx *sql.Tx, rowID int64, text string) error {
 	var statement *sql.Stmt
+	var row Row
 	var err error
 
 	statement, err = tx.Prepare("UPDATE row SET text = ? WHERE id = ?")
@@ -165,6 +171,15 @@ func sqlUpdateRowText(tx *sql.Tx, rowID int64, text string) error {
 		goto End
 	}
 
+	row, err = sqlGetRowByID(tx, rowID)
+	if err != nil {
+		goto End
+	}
+
+	err = sqlUpdateTagTS(tx, row.tagID)
+	if err != nil {
+		goto End
+	}
 End:
 	return err
 }
