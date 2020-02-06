@@ -1,9 +1,9 @@
 CREATE TABLE IF NOT EXISTS "ref" (
 	"tag_id"	INTEGER NOT NULL,
 	"row_id"	INTEGER NOT NULL,
-	FOREIGN KEY("row_id") REFERENCES "row"("id"),
+	FOREIGN KEY("row_id") REFERENCES "row"("id") ON DELETE CASCADE,
 	PRIMARY KEY("tag_id","row_id"),
-	FOREIGN KEY("tag_id") REFERENCES "tag"("id")
+	FOREIGN KEY("tag_id") REFERENCES "tag"("id") ON DELETE CASCADE
 );
 CREATE TABLE IF NOT EXISTS "tag" (
 	"id"	INTEGER,
