@@ -20,12 +20,12 @@ func TestAddRow(t *testing.T) {
 		t.Fatal("AddTag failed: " + err.Error())
 	}
 
-	row, err = db.AddRow(tag.id, rowText, 0, 0)
+	row, err = db.AddRow(tag.ID, rowText, 0, 0)
 	if err != nil {
 		t.Fatal("AddRow failed: " + err.Error())
 	}
 
-	if row.tagID != tag.id {
+	if row.tagID != tag.ID {
 		t.Fatal("row.tagID != tag.id")
 	}
 
@@ -50,17 +50,17 @@ func TestGetRowsForTagID(t *testing.T) {
 		t.Fatal("AddTag failed: " + err.Error())
 	}
 
-	_, err = db.AddRow(tag.id, row1Text, 0, 0)
+	_, err = db.AddRow(tag.ID, row1Text, 0, 0)
 	if err != nil {
 		t.Fatal("AddRow failed: " + err.Error())
 	}
 
-	_, err = db.AddRow(tag.id, row2Text, 0, 0)
+	_, err = db.AddRow(tag.ID, row2Text, 0, 0)
 	if err != nil {
 		t.Fatal("AddRow failed: " + err.Error())
 	}
 
-	rows, err = db.GetRowsForTagID(tag.id)
+	rows, err = db.GetRowsForTagID(tag.ID)
 	if err != nil {
 		t.Fatal("GetRowsForTagID failed: " + err.Error())
 	}

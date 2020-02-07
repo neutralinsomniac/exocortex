@@ -96,7 +96,7 @@ func sqlGetRefsToTagByTagName(tx *sql.Tx, name string) (Refs, error) {
 		goto End
 	}
 
-	refs, err = sqlGetRefsToTagByTagID(tx, tag.id)
+	refs, err = sqlGetRefsToTagByTagID(tx, tag.ID)
 	if err != nil {
 		goto End
 	}

@@ -9,9 +9,9 @@ import (
 )
 
 type Tag struct {
-	id        int64
-	name      string
-	updatedTS int64
+	ID        int64
+	Name      string
+	UpdatedTS int64
 }
 
 func sqlAddTag(tx *sql.Tx, name string) (int64, error) {
@@ -48,7 +48,7 @@ func sqlAddTag(tx *sql.Tx, name string) (int64, error) {
 		if err != nil {
 			goto End
 		}
-		tagID = tag.id
+		tagID = tag.ID
 	}
 
 End:
@@ -62,7 +62,7 @@ func sqlGetTagByName(tx *sql.Tx, name string) (Tag, error) {
 
 	sqlRow = tx.QueryRow("SELECT id, name, updated_ts FROM tag WHERE name = $1", name)
 
-	err = sqlRow.Scan(&tag.id, &tag.name, &tag.updatedTS)
+	err = sqlRow.Scan(&tag.ID, &tag.Name, &tag.UpdatedTS)
 	if err != nil {
 		goto End
 	}
@@ -111,7 +111,7 @@ func sqlGetAllTags(tx *sql.Tx) ([]Tag, error) {
 	defer sqlRows.Close()
 
 	for sqlRows.Next() {
-		err = sqlRows.Scan(&tag.id, &tag.name, &tag.updatedTS)
+		err = sqlRows.Scan(&tag.ID, &tag.Name, &tag.UpdatedTS)
 		if err != nil {
 			goto End
 		}
@@ -164,7 +164,7 @@ func sqlGetTagByID(tx *sql.Tx, id int64) (Tag, error) {
 
 	sqlRow = tx.QueryRow("SELECT id, name, updated_ts FROM tag WHERE id = $1", id)
 
-	err = sqlRow.Scan(&tag.id, &tag.name, &tag.updatedTS)
+	err = sqlRow.Scan(&tag.ID, &tag.Name, &tag.UpdatedTS)
 	if err != nil {
 		goto End
 	}
@@ -286,7 +286,7 @@ func (e *ExoDB) RenameTag(oldname string, newname string) error {
 		goto End
 	}
 
-	refs, err = sqlGetRefsToTagByTagID(tx, tag.id)
+	refs, err = sqlGetRefsToTagByTagID(tx, tag.ID)
 	if err != nil {
 		goto End
 	}
