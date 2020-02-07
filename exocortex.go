@@ -89,7 +89,7 @@ func (t *tagButton) layout(gtx *layout.Context, th *material.Theme) {
 		}
 	}
 
-	pointer.Rect(image.Rectangle{}).Add(gtx.Ops)
+	pointer.Rect(image.Rectangle{Max: image.Point{X: 500, Y: 500}}).Add(gtx.Ops)
 	pointer.InputOp{Key: t}.Add(gtx.Ops)
 	th.Body1(t.tag.Name).Layout(gtx)
 }
