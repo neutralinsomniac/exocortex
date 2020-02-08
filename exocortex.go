@@ -73,7 +73,10 @@ func loop(w *app.Window) {
 
 func (s *state) render(gtx *layout.Context, th *material.Theme) {
 	layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-		layout.Flexed(1, func() {
+		layout.Rigid(func() {
+			th.H3("Tags").Layout(gtx)
+		}),
+		layout.Rigid(func() {
 			s.tagList.Layout(gtx, len(s.allTags), func(i int) {
 				s.allTags[i].layout(gtx, th)
 			})
