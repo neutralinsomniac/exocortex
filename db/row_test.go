@@ -25,11 +25,11 @@ func TestAddRow(t *testing.T) {
 		t.Fatal("AddRow failed: " + err.Error())
 	}
 
-	if row.tagID != tag.ID {
+	if row.TagID != tag.ID {
 		t.Fatal("row.tagID != tag.id")
 	}
 
-	if row.text != rowText {
+	if row.Text != rowText {
 		t.Fatal("row.text != rowText")
 	}
 }
@@ -69,11 +69,11 @@ func TestGetRowsForTagID(t *testing.T) {
 		t.Fatal(fmt.Sprintf("GetRowsForTagID did not return 2 results (returned %d)", len(rows)))
 	}
 
-	if rows[0].text != row1Text {
+	if rows[0].Text != row1Text {
 		t.Fatal("GetRowsForTagID row 1 text does not match expected")
 	}
 
-	if rows[1].text != row2Text {
+	if rows[1].Text != row2Text {
 		t.Fatal("GetRowsForTagID row 1 text does not match expected")
 	}
 }

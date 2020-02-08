@@ -1,13 +1,11 @@
 package main
 
 import (
-	"fmt"
-	"image"
-
 	"gioui.org/app"
-	"gioui.org/io/pointer"
 	"gioui.org/io/system"
 	"gioui.org/layout"
+	"gioui.org/unit"
+	"gioui.org/widget"
 	"gioui.org/widget/material"
 	"github.com/neutralinsomniac/exocortex/db"
 
@@ -21,12 +19,17 @@ func checkErr(err error) {
 }
 
 type state struct {
-	tagList layout.List
-	allTags []tagButton
+	db          *db.ExoDB
+	tagList     layout.List
+	rowList     layout.List
+	currentTag  db.Tag
+	currentRows []db.Row
+	allTags     []tagButton
 }
 
 type tagButton struct {
-	tag db.Tag
+	tag    db.Tag
+	button widget.Button
 }
 
 var programState state
@@ -40,11 +43,13 @@ func main() {
 	err = db.LoadSchema()
 	checkErr(err)
 
-	allTags, err := db.GetAllTags()
+	programState.db = &db
+
+	allTags, err := programState.db.GetAllTags()
 	checkErr(err)
 
 	for _, tag := range allTags {
-		programState.allTags = append(programState.allTags, tagButton{tag})
+		programState.allTags = append(programState.allTags, tagButton{tag: tag})
 	}
 
 	go func() {
@@ -59,6 +64,7 @@ func loop(w *app.Window) {
 	th := material.NewTheme()
 	gtx := layout.NewContext(w.Queue())
 	programState.tagList.Axis = layout.Vertical
+	programState.rowList.Axis = layout.Vertical
 
 	for e := range w.Events() {
 		if e, ok := e.(system.FrameEvent); ok {
@@ -72,27 +78,60 @@ func loop(w *app.Window) {
 }
 
 func (s *state) render(gtx *layout.Context, th *material.Theme) {
-	layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-		layout.Rigid(func() {
-			th.H3("Tags").Layout(gtx)
+	in := layout.UniformInset(unit.Dp(8))
+	layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+		// all tags pane
+		layout.Flexed(0.2, func() {
+			layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+				layout.Rigid(func() {
+					in.Layout(gtx, func() {
+						label := th.H3("Tags")
+						label.Layout(gtx)
+					})
+
+				}),
+				layout.Rigid(func() {
+					in.Layout(gtx, func() {
+						s.tagList.Layout(gtx, len(s.allTags), func(i int) {
+							s.allTags[i].layout(gtx, th, s)
+						})
+					})
+				}),
+			)
 		}),
-		layout.Rigid(func() {
-			s.tagList.Layout(gtx, len(s.allTags), func(i int) {
-				s.allTags[i].layout(gtx, th)
-			})
-		}))
+		// space
+		layout.Flexed(0.05, func() {}),
+		// selected tag pane
+		layout.Flexed(0.75, func() {
+			layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+				layout.Rigid(func() {
+					in.Layout(gtx, func() {
+						th.H3(s.currentTag.Name).Layout(gtx)
+					})
+				}),
+				layout.Rigid(func() {
+					in.Layout(gtx, func() {
+						s.rowList.Layout(gtx, len(s.currentRows), func(i int) {
+							th.Body1(s.currentRows[i].Text).Layout(gtx)
+						})
+					})
+				}),
+			)
+		}),
+	)
 }
 
-func (t *tagButton) layout(gtx *layout.Context, th *material.Theme) {
-	for _, e := range gtx.Events(t) {
-		if e, ok := e.(pointer.Event); ok {
-			if e.Type == pointer.Press {
-				fmt.Println("tag", t.tag.Name, "pressed")
-			}
-		}
+func (t *tagButton) layout(gtx *layout.Context, th *material.Theme, s *state) {
+	var err error
+	for t.button.Clicked(gtx) {
+		s.currentTag = t.tag
+		s.currentRows, err = s.db.GetRowsForTagID(t.tag.ID)
+		checkErr(err)
 	}
 
-	pointer.Rect(image.Rectangle{Max: image.Point{X: 500, Y: 500}}).Add(gtx.Ops)
-	pointer.InputOp{Key: t}.Add(gtx.Ops)
-	th.Body1(t.tag.Name).Layout(gtx)
+	in := layout.UniformInset(unit.Dp(4))
+	in.Layout(gtx, func() {
+		button := th.Button(t.tag.Name)
+		button.Layout(gtx, &t.button)
+	})
 }

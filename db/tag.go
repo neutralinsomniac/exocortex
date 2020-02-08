@@ -293,7 +293,7 @@ func (e *ExoDB) RenameTag(oldname string, newname string) error {
 
 	for _, rows := range refs {
 		for _, row := range rows {
-			err = sqlUpdateRowText(tx, row.id, strings.ReplaceAll(row.text, "[["+oldname+"]]", "[["+newname+"]]"))
+			err = sqlUpdateRowText(tx, row.ID, strings.ReplaceAll(row.Text, "[["+oldname+"]]", "[["+newname+"]]"))
 			if err != nil {
 				goto End
 			}

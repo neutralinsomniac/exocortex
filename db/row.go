@@ -7,12 +7,12 @@ import (
 )
 
 type Row struct {
-	id          int64
-	tagID       int64
+	ID          int64
+	TagID       int64
 	rank        int
-	text        string
-	parentRowID int64
-	updatedTS   int64
+	Text        string
+	ParentRowID int64
+	UpdatedTS   int64
 }
 
 func sqlGetRowByID(tx *sql.Tx, id int64) (Row, error) {
@@ -22,7 +22,7 @@ func sqlGetRowByID(tx *sql.Tx, id int64) (Row, error) {
 
 	sqlRow = tx.QueryRow("SELECT id, tag_id, text, rank, parent_row_id, updated_ts FROM row WHERE id = $1", id)
 
-	err = sqlRow.Scan(&row.id, &row.tagID, &row.text, &row.rank, &row.parentRowID, &row.updatedTS)
+	err = sqlRow.Scan(&row.ID, &row.TagID, &row.Text, &row.rank, &row.ParentRowID, &row.UpdatedTS)
 	if err != nil {
 		goto End
 	}
@@ -64,7 +64,7 @@ func sqlGetRowsForTagID(tx *sql.Tx, tagID int64) ([]Row, error) {
 
 	for sqlRows.Next() {
 		var row Row
-		err = sqlRows.Scan(&row.id, &row.tagID, &row.rank, &row.text, &row.parentRowID, &row.updatedTS)
+		err = sqlRows.Scan(&row.ID, &row.TagID, &row.rank, &row.Text, &row.ParentRowID, &row.UpdatedTS)
 		if err != nil {
 			goto End
 		}
@@ -176,7 +176,7 @@ func sqlUpdateRowText(tx *sql.Tx, rowID int64, text string) error {
 		goto End
 	}
 
-	err = sqlUpdateTagTS(tx, row.tagID)
+	err = sqlUpdateTagTS(tx, row.TagID)
 	if err != nil {
 		goto End
 	}
@@ -205,7 +205,7 @@ func sqlUpdateRefsForRowID(tx *sql.Tx, rowID int64) error {
 
 	// now find new refs and create them
 	re = regexp.MustCompile(`\[\[(.*?)\]\]`)
-	newTags = re.FindAllStringSubmatch(row.text, -1)
+	newTags = re.FindAllStringSubmatch(row.Text, -1)
 
 	for _, newTag := range newTags {
 		tagID, err = sqlAddTag(tx, newTag[1])
