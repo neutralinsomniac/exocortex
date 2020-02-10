@@ -155,7 +155,6 @@ func render(gtx *layout.Context, th *material.Theme) {
 								refListLen += len(refs) // for the rows themselves
 							}
 							var cachedUIRefRows = programState.currentUIRefRows
-							fmt.Println(refListLen)
 							content := make([]interface{}, 0)
 							for tag, uiRefRows := range cachedUIRefRows {
 								content = append(content, tag)
@@ -201,7 +200,7 @@ func (r *uiRow) layout(gtx *layout.Context, th *material.Theme) {
 			panic("unknown type encountered in uiRow.content")
 		}
 	}
-	layout.Flex{Axis: layout.Horizontal}.Layout(gtx, flexChildren...)
+	layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, flexChildren...)
 }
 
 func switchTag(tag db.Tag) {
