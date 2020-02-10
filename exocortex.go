@@ -25,6 +25,7 @@ type state struct {
 	db               *db.ExoDB
 	tagList          layout.List
 	rowList          layout.List
+	refList          layout.List
 	currentDBTag     db.Tag
 	currentDBRows    []db.Row
 	currentDBRefs    db.Refs
@@ -138,19 +139,45 @@ func render(gtx *layout.Context, th *material.Theme) {
 				}),
 				// references pane
 				layout.Flexed(0.5, func() {
-					in.Layout(gtx, func() {
-						th.H3("References").Layout(gtx)
-					})
-					/*
-						// rows for current tag
+					layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 						layout.Rigid(func() {
 							in.Layout(gtx, func() {
-								var cachedUIRefRows = programState.currentUIRefRows
-								programState.rowList.Layout(gtx, len(cachedUIRefRows), func(i int) {
-									cachedUIRefRows[i].layout(gtx, th)
-								})
+								th.H3("References").Layout(gtx)
 							})
-						})*/
+						}),
+
+						layout.Rigid(func() {
+							// source tag for refs
+							// count total refs for rowlist
+							refListLen := 0
+							for _, refs := range programState.currentDBRefs {
+								refListLen++            // for the tag header
+								refListLen += len(refs) // for the rows themselves
+							}
+							var cachedUIRefRows = programState.currentUIRefRows
+							fmt.Println(refListLen)
+							content := make([]interface{}, 0)
+							for tag, uiRefRows := range cachedUIRefRows {
+								content = append(content, tag)
+								for _, uiRefRow := range uiRefRows {
+									content = append(content, uiRefRow)
+								}
+							}
+							programState.rowList.Layout(gtx, len(content), func(i int) {
+								switch v := content[i].(type) {
+								case db.Tag:
+									// tag header
+									in.Layout(gtx, func() {
+										th.H3(v.Name).Layout(gtx)
+									})
+								case uiRow:
+									in.Layout(gtx, func() {
+										v.layout(gtx, th)
+									})
+								}
+							})
+						}),
+					)
 				}),
 			)
 		}),
