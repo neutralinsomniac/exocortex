@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"regexp"
+	"time"
 
 	"gioui.org/app"
 	"gioui.org/io/system"
@@ -47,15 +48,22 @@ type uiRow struct {
 var programState state
 
 func main() {
-	var db db.ExoDB
-	err := db.Open("./exocortex.db")
+	var exoDB db.ExoDB
+	var tag db.Tag
+	err := exoDB.Open("./exocortex.db")
 	checkErr(err)
-	defer db.Close()
+	defer exoDB.Close()
 
-	err = db.LoadSchema()
+	err = exoDB.LoadSchema()
 	checkErr(err)
 
-	programState.db = &db
+	programState.db = &exoDB
+
+	t := time.Now()
+	tag, err = programState.db.AddTag(t.Format("January 02 2006"))
+	checkErr(err)
+
+	switchTag(tag)
 
 	allTags, err := programState.db.GetAllTags()
 	checkErr(err)
@@ -118,7 +126,7 @@ func render(gtx *layout.Context, th *material.Theme) {
 		// selected tag rows pane
 		layout.Flexed(0.75, func() {
 			layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-				layout.Flexed(0.5, func() {
+				layout.Rigid(func() {
 					layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 						// current tag name
 						layout.Rigid(func() {
@@ -138,45 +146,45 @@ func render(gtx *layout.Context, th *material.Theme) {
 					)
 				}),
 				// references pane
-				layout.Flexed(0.5, func() {
-					layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-						layout.Rigid(func() {
-							in.Layout(gtx, func() {
-								th.H3("References").Layout(gtx)
-							})
-						}),
+				layout.Rigid(func() {
+					if len(programState.currentDBRefs) > 0 {
+						// count total refs for rowlist
+						refListLen := 0
+						for _, refs := range programState.currentDBRefs {
+							refListLen++            // for the source tag header
+							refListLen += len(refs) // for the rows themselves
+						}
+						layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+							layout.Rigid(func() {
+								in.Layout(gtx, func() {
+									th.Body1(fmt.Sprintf("%d linked references to %s", len(programState.currentDBRefs), programState.currentDBTag.Name)).Layout(gtx)
+								})
+							}),
 
-						layout.Rigid(func() {
-							// source tag for refs
-							// count total refs for rowlist
-							refListLen := 0
-							for _, refs := range programState.currentDBRefs {
-								refListLen++            // for the tag header
-								refListLen += len(refs) // for the rows themselves
-							}
-							var cachedUIRefRows = programState.currentUIRefRows
-							content := make([]interface{}, 0)
-							for tag, uiRefRows := range cachedUIRefRows {
-								content = append(content, tag)
-								for _, uiRefRow := range uiRefRows {
-									content = append(content, uiRefRow)
+							layout.Rigid(func() {
+								var cachedUIRefRows = programState.currentUIRefRows
+								content := make([]interface{}, 0)
+								for tag, uiRefRows := range cachedUIRefRows {
+									content = append(content, tag)
+									for _, uiRefRow := range uiRefRows {
+										content = append(content, uiRefRow)
+									}
 								}
-							}
-							programState.rowList.Layout(gtx, len(content), func(i int) {
-								switch v := content[i].(type) {
-								case db.Tag:
-									// tag header
+								programState.rowList.Layout(gtx, len(content), func(i int) {
 									in.Layout(gtx, func() {
-										th.H3(v.Name).Layout(gtx)
+										switch v := content[i].(type) {
+										case db.Tag:
+											// source tag for refs
+											th.H3(v.Name).Layout(gtx)
+										case uiRow:
+											// refs themselves
+											v.layout(gtx, th)
+										}
 									})
-								case uiRow:
-									in.Layout(gtx, func() {
-										v.layout(gtx, th)
-									})
-								}
-							})
-						}),
-					)
+								})
+							}),
+						)
+					}
 				}),
 			)
 		}),
