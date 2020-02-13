@@ -24,17 +24,18 @@ func checkErr(err error) {
 }
 
 type state struct {
-	db               *db.ExoDB
-	tagList          layout.List
-	rowList          layout.List
-	refList          layout.List
-	newRowEditor     widget.Editor
-	currentDBTag     db.Tag
-	currentDBRows    []db.Row
-	currentDBRefs    db.Refs
-	currentUIRows    []uiRow
-	currentUIRefRows map[db.Tag][]uiRow
-	allTags          []uiTagButton
+	db                *db.ExoDB
+	tagList           layout.List
+	rowList           layout.List
+	refList           layout.List
+	newRowEditor      widget.Editor
+	currentDBTag      db.Tag
+	currentDBRows     []db.Row
+	currentDBRefs     db.Refs
+	currentUIRows     []uiRow
+	currentUIRefRows  map[db.Tag][]uiRow
+	sortedRefTagsKeys []db.Tag
+	allTags           []uiTagButton
 }
 
 type uiTagButton struct {
@@ -104,6 +105,17 @@ func (p *state) Refresh() error {
 			p.currentUIRefRows[tag] = append(p.currentUIRefRows[tag], uiRow)
 		}
 	}
+
+	// sort our ui ref row keys since map key order isn't stable
+	p.sortedRefTagsKeys = make([]db.Tag, len(p.currentDBRefs))
+	i := 0
+	for k := range p.currentDBRefs {
+		p.sortedRefTagsKeys[i] = k
+		i++
+	}
+
+	sort.Slice(p.sortedRefTagsKeys, func(i, j int) bool { return p.sortedRefTagsKeys[i].Name < p.sortedRefTagsKeys[j].Name })
+
 	return err
 }
 
@@ -203,7 +215,7 @@ func render(gtx *layout.Context, th *material.Theme) {
 						}),
 						// editor widget for adding a new row
 						layout.Rigid(func() {
-							in.Layout(gtx, func() {
+							layout.Inset{Top: unit.Dp(8), Left: unit.Dp(8), Right: unit.Dp(8), Bottom: unit.Dp(16)}.Layout(gtx, func() {
 								th.Editor("New row").Layout(gtx, &programState.newRowEditor)
 							})
 						}),
@@ -212,7 +224,9 @@ func render(gtx *layout.Context, th *material.Theme) {
 							in.Layout(gtx, func() {
 								var cachedUIRows = programState.currentUIRows
 								programState.rowList.Layout(gtx, len(cachedUIRows), func(i int) {
-									cachedUIRows[i].layout(gtx, th)
+									layout.Inset{Top: unit.Dp(4), Bottom: unit.Dp(4)}.Layout(gtx, func() {
+										cachedUIRows[i].layout(gtx, th)
+									})
 								})
 							})
 						}),
@@ -230,23 +244,15 @@ func render(gtx *layout.Context, th *material.Theme) {
 						layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 							layout.Rigid(func() {
 								in.Layout(gtx, func() {
-									th.Body1(fmt.Sprintf("%d linked references to %s", len(programState.currentDBRefs), programState.currentDBTag.Name)).Layout(gtx)
+									th.H4("References").Layout(gtx)
+
 								})
 							}),
-
 							layout.Rigid(func() {
 								var cachedUIRefRows = programState.currentUIRefRows
 
-								keys := make([]db.Tag, len(cachedUIRefRows))
-								i := 0
-								for k := range cachedUIRefRows {
-									keys[i] = k
-									i++
-								}
-								sort.Slice(keys, func(i, j int) bool { return keys[i].Name < keys[j].Name })
-
 								content := make([]interface{}, 0)
-								for _, tag := range keys {
+								for _, tag := range programState.sortedRefTagsKeys {
 									content = append(content, tag)
 									for _, uiRefRow := range cachedUIRefRows[tag] {
 										content = append(content, uiRefRow)
@@ -257,7 +263,7 @@ func render(gtx *layout.Context, th *material.Theme) {
 										switch v := content[i].(type) {
 										case db.Tag:
 											// source tag for refs
-											th.H3(v.Name).Layout(gtx)
+											th.H5(v.Name).Layout(gtx)
 										case uiRow:
 											// refs themselves
 											v.layout(gtx, th)
