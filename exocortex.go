@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"regexp"
+	"sort"
 	"time"
 
 	"gioui.org/app"
@@ -27,6 +28,7 @@ type state struct {
 	tagList          layout.List
 	rowList          layout.List
 	refList          layout.List
+	newRowEditor     widget.Editor
 	currentDBTag     db.Tag
 	currentDBRows    []db.Row
 	currentDBRefs    db.Refs
@@ -47,6 +49,64 @@ type uiRow struct {
 
 var programState state
 
+func (p *state) Refresh() error {
+	var err error
+
+	fmt.Println("refresh!")
+	allTags, err := p.db.GetAllTags()
+	checkErr(err)
+
+	p.allTags = make([]uiTagButton, 0)
+	for _, tag := range allTags {
+		p.allTags = append(p.allTags, uiTagButton{tag: tag})
+	}
+	checkErr(err)
+	p.currentDBRows, err = p.db.GetRowsForTagID(p.currentDBTag.ID)
+	p.currentUIRows = make([]uiRow, 0)
+	checkErr(err)
+
+	// split the text by tags and pre-calculate the row contents
+	re := regexp.MustCompile(`\[\[(.*?)\]\]`)
+	for _, row := range p.currentDBRows {
+		uiRow := uiRow{row: row}
+		for tagIndex := re.FindStringIndex(row.Text); tagIndex != nil; tagIndex = re.FindStringIndex(row.Text) {
+			// leading text
+			uiRow.content = append(uiRow.content, row.Text[:tagIndex[0]])
+			// tag button
+			tag, err := p.db.GetTagByName(row.Text[tagIndex[0]+2 : tagIndex[1]-2])
+			checkErr(err)
+			uiRow.content = append(uiRow.content, &uiTagButton{tag: tag})
+			row.Text = row.Text[tagIndex[1]:]
+		}
+		uiRow.content = append(uiRow.content, row.Text)
+		p.currentUIRows = append(p.currentUIRows, uiRow)
+	}
+
+	// refs
+	p.currentDBRefs, err = p.db.GetRefsToTagByTagID(p.currentDBTag.ID)
+	checkErr(err)
+
+	p.currentUIRefRows = make(map[db.Tag][]uiRow)
+	for tag, rows := range p.currentDBRefs {
+		p.currentUIRefRows[tag] = make([]uiRow, 0)
+		for _, row := range rows {
+			uiRow := uiRow{row: row}
+			for tagIndex := re.FindStringIndex(row.Text); tagIndex != nil; tagIndex = re.FindStringIndex(row.Text) {
+				// leading text
+				uiRow.content = append(uiRow.content, row.Text[:tagIndex[0]])
+				// tag button
+				tag, err := p.db.GetTagByName(row.Text[tagIndex[0]+2 : tagIndex[1]-2])
+				checkErr(err)
+				uiRow.content = append(uiRow.content, &uiTagButton{tag: tag})
+				row.Text = row.Text[tagIndex[1]:]
+			}
+			uiRow.content = append(uiRow.content, row.Text)
+			p.currentUIRefRows[tag] = append(p.currentUIRefRows[tag], uiRow)
+		}
+	}
+	return err
+}
+
 func main() {
 	var exoDB db.ExoDB
 	var tag db.Tag
@@ -65,12 +125,7 @@ func main() {
 
 	switchTag(tag)
 
-	allTags, err := programState.db.GetAllTags()
-	checkErr(err)
-
-	for _, tag := range allTags {
-		programState.allTags = append(programState.allTags, uiTagButton{tag: tag})
-	}
+	programState.Refresh()
 
 	go func() {
 		w := app.NewWindow()
@@ -85,6 +140,8 @@ func loop(w *app.Window) {
 	gtx := layout.NewContext(w.Queue())
 	programState.tagList.Axis = layout.Vertical
 	programState.rowList.Axis = layout.Vertical
+	programState.newRowEditor.SingleLine = true
+	programState.newRowEditor.Submit = true
 
 	for e := range w.Events() {
 		if e, ok := e.(system.FrameEvent); ok {
@@ -98,6 +155,17 @@ func loop(w *app.Window) {
 }
 
 func render(gtx *layout.Context, th *material.Theme) {
+	for _, e := range programState.newRowEditor.Events(gtx) {
+		switch e := e.(type) {
+		case widget.SubmitEvent:
+			if programState.newRowEditor.Text() != "" {
+				_, err := programState.db.AddRow(programState.currentDBTag.ID, e.Text, 0, 0)
+				checkErr(err)
+				programState.newRowEditor.SetText("")
+				programState.Refresh()
+			}
+		}
+	}
 	in := layout.UniformInset(unit.Dp(8))
 	layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
 		// all tags pane
@@ -105,14 +173,13 @@ func render(gtx *layout.Context, th *material.Theme) {
 			layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 				layout.Rigid(func() {
 					in.Layout(gtx, func() {
-						label := th.H3("Tags")
-						label.Layout(gtx)
+						th.H3("Tags").Layout(gtx)
 					})
 				}),
 				layout.Rigid(func() {
 					in.Layout(gtx, func() {
+						in := layout.UniformInset(unit.Dp(4))
 						programState.tagList.Layout(gtx, len(programState.allTags), func(i int) {
-							in := layout.UniformInset(unit.Dp(4))
 							in.Layout(gtx, func() {
 								programState.allTags[i].layout(gtx, th)
 							})
@@ -132,6 +199,12 @@ func render(gtx *layout.Context, th *material.Theme) {
 						layout.Rigid(func() {
 							in.Layout(gtx, func() {
 								th.H3(programState.currentDBTag.Name).Layout(gtx)
+							})
+						}),
+						// editor widget for adding a new row
+						layout.Rigid(func() {
+							in.Layout(gtx, func() {
+								th.Editor("New row").Layout(gtx, &programState.newRowEditor)
 							})
 						}),
 						// rows for current tag
@@ -163,10 +236,19 @@ func render(gtx *layout.Context, th *material.Theme) {
 
 							layout.Rigid(func() {
 								var cachedUIRefRows = programState.currentUIRefRows
+
+								keys := make([]db.Tag, len(cachedUIRefRows))
+								i := 0
+								for k := range cachedUIRefRows {
+									keys[i] = k
+									i++
+								}
+								sort.Slice(keys, func(i, j int) bool { return keys[i].Name < keys[j].Name })
+
 								content := make([]interface{}, 0)
-								for tag, uiRefRows := range cachedUIRefRows {
+								for _, tag := range keys {
 									content = append(content, tag)
-									for _, uiRefRow := range uiRefRows {
+									for _, uiRefRow := range cachedUIRefRows[tag] {
 										content = append(content, uiRefRow)
 									}
 								}
@@ -212,52 +294,8 @@ func (r *uiRow) layout(gtx *layout.Context, th *material.Theme) {
 }
 
 func switchTag(tag db.Tag) {
-	var err error
-
 	programState.currentDBTag = tag
-	programState.currentDBRows, err = programState.db.GetRowsForTagID(tag.ID)
-	programState.currentUIRows = make([]uiRow, 0)
-	checkErr(err)
-
-	// split the text by tags and pre-calculate the row contents
-	re := regexp.MustCompile(`\[\[(.*?)\]\]`)
-	for _, row := range programState.currentDBRows {
-		uiRow := uiRow{row: row}
-		for tagIndex := re.FindStringIndex(row.Text); tagIndex != nil; tagIndex = re.FindStringIndex(row.Text) {
-			// leading text
-			uiRow.content = append(uiRow.content, row.Text[:tagIndex[0]])
-			// tag button
-			tag, err := programState.db.GetTagByName(row.Text[tagIndex[0]+2 : tagIndex[1]-2])
-			checkErr(err)
-			uiRow.content = append(uiRow.content, &uiTagButton{tag: tag})
-			row.Text = row.Text[tagIndex[1]:]
-		}
-		uiRow.content = append(uiRow.content, row.Text)
-		programState.currentUIRows = append(programState.currentUIRows, uiRow)
-	}
-
-	// refs
-	programState.currentDBRefs, err = programState.db.GetRefsToTagByTagID(tag.ID)
-	checkErr(err)
-
-	programState.currentUIRefRows = make(map[db.Tag][]uiRow)
-	for tag, rows := range programState.currentDBRefs {
-		programState.currentUIRefRows[tag] = make([]uiRow, 0)
-		for _, row := range rows {
-			uiRow := uiRow{row: row}
-			for tagIndex := re.FindStringIndex(row.Text); tagIndex != nil; tagIndex = re.FindStringIndex(row.Text) {
-				// leading text
-				uiRow.content = append(uiRow.content, row.Text[:tagIndex[0]])
-				// tag button
-				tag, err := programState.db.GetTagByName(row.Text[tagIndex[0]+2 : tagIndex[1]-2])
-				checkErr(err)
-				uiRow.content = append(uiRow.content, &uiTagButton{tag: tag})
-				row.Text = row.Text[tagIndex[1]:]
-			}
-			uiRow.content = append(uiRow.content, row.Text)
-			programState.currentUIRefRows[tag] = append(programState.currentUIRefRows[tag], uiRow)
-		}
-	}
+	programState.Refresh()
 }
 
 func (t *uiTagButton) layout(gtx *layout.Context, th *material.Theme) {
