@@ -33,7 +33,7 @@ type state struct {
 	currentDBRows     []db.Row
 	currentDBRefs     db.Refs
 	currentUIRows     []uiRow
-	currentUIRefRows  map[db.Tag][]*uiRow
+	currentUIRefRows  map[db.Tag][]uiRow
 	sortedRefTagsKeys []db.Tag
 	allTags           []uiTagButton
 }
@@ -96,9 +96,9 @@ func (p *state) Refresh() error {
 	checkErr(err)
 	p.db.GetAllTags()
 
-	p.currentUIRefRows = make(map[db.Tag][]*uiRow)
+	p.currentUIRefRows = make(map[db.Tag][]uiRow)
 	for tag, rows := range p.currentDBRefs {
-		p.currentUIRefRows[tag] = make([]*uiRow, 0)
+		p.currentUIRefRows[tag] = make([]uiRow, 0)
 		for _, row := range rows {
 			uiRow := uiRow{row: row, editor: widget.Editor{SingleLine: true, Submit: true}}
 			uiRow.editor.SetText(uiRow.row.Text)
@@ -112,7 +112,7 @@ func (p *state) Refresh() error {
 				row.Text = row.Text[tagIndex[1]:]
 			}
 			uiRow.content = append(uiRow.content, row.Text)
-			p.currentUIRefRows[tag] = append(p.currentUIRefRows[tag], &uiRow)
+			p.currentUIRefRows[tag] = append(p.currentUIRefRows[tag], uiRow)
 		}
 	}
 
@@ -260,13 +260,11 @@ func render(gtx *layout.Context, th *material.Theme) {
 								})
 							}),
 							layout.Rigid(func() {
-								//var cachedUIRefRows = programState.currentUIRefRows
-
 								content := make([]interface{}, 0)
 								for _, tag := range programState.sortedRefTagsKeys {
 									content = append(content, tag)
-									for _, uiRefRow := range programState.currentUIRefRows[tag] {
-										content = append(content, uiRefRow)
+									for i, _ := range programState.currentUIRefRows[tag] {
+										content = append(content, &programState.currentUIRefRows[tag][i])
 									}
 								}
 								programState.refList.Layout(gtx, len(content), func(i int) {
@@ -277,7 +275,6 @@ func render(gtx *layout.Context, th *material.Theme) {
 											th.H5(v.Name).Layout(gtx)
 										case *uiRow:
 											// refs themselves
-											//fmt.Println("Ref")
 											v.layout(gtx, th)
 										}
 									})
