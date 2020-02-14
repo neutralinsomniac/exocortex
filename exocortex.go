@@ -33,7 +33,7 @@ type state struct {
 	currentDBRows     []db.Row
 	currentDBRefs     db.Refs
 	currentUIRows     []uiRow
-	currentUIRefRows  map[db.Tag][]uiRow
+	currentUIRefRows  map[db.Tag][]*uiRow
 	sortedRefTagsKeys []db.Tag
 	allTags           []uiTagButton
 }
@@ -44,11 +44,19 @@ type uiTagButton struct {
 }
 
 type uiRow struct {
-	row     db.Row
-	content []interface{} // string(s) + uiTagButton(s)
+	row        db.Row
+	content    []interface{} // string(s) + uiTagButton(s)
+	editor     widget.Editor
+	editButton widget.Button
+	editing    bool
 }
 
 var programState state
+
+func switchTag(tag db.Tag) {
+	programState.currentDBTag = tag
+	programState.Refresh()
+}
 
 func (p *state) Refresh() error {
 	var err error
@@ -61,15 +69,15 @@ func (p *state) Refresh() error {
 	for _, tag := range allTags {
 		p.allTags = append(p.allTags, uiTagButton{tag: tag})
 	}
-	checkErr(err)
 	p.currentDBRows, err = p.db.GetRowsForTagID(p.currentDBTag.ID)
-	p.currentUIRows = make([]uiRow, 0)
 	checkErr(err)
+	p.currentUIRows = make([]uiRow, 0)
 
 	// split the text by tags and pre-calculate the row contents
 	re := regexp.MustCompile(`\[\[(.*?)\]\]`)
 	for _, row := range p.currentDBRows {
-		uiRow := uiRow{row: row}
+		uiRow := uiRow{row: row, editor: widget.Editor{SingleLine: true, Submit: true}}
+		uiRow.editor.SetText(uiRow.row.Text)
 		for tagIndex := re.FindStringIndex(row.Text); tagIndex != nil; tagIndex = re.FindStringIndex(row.Text) {
 			// leading text
 			uiRow.content = append(uiRow.content, row.Text[:tagIndex[0]])
@@ -86,12 +94,14 @@ func (p *state) Refresh() error {
 	// refs
 	p.currentDBRefs, err = p.db.GetRefsToTagByTagID(p.currentDBTag.ID)
 	checkErr(err)
+	p.db.GetAllTags()
 
-	p.currentUIRefRows = make(map[db.Tag][]uiRow)
+	p.currentUIRefRows = make(map[db.Tag][]*uiRow)
 	for tag, rows := range p.currentDBRefs {
-		p.currentUIRefRows[tag] = make([]uiRow, 0)
+		p.currentUIRefRows[tag] = make([]*uiRow, 0)
 		for _, row := range rows {
-			uiRow := uiRow{row: row}
+			uiRow := uiRow{row: row, editor: widget.Editor{SingleLine: true, Submit: true}}
+			uiRow.editor.SetText(uiRow.row.Text)
 			for tagIndex := re.FindStringIndex(row.Text); tagIndex != nil; tagIndex = re.FindStringIndex(row.Text) {
 				// leading text
 				uiRow.content = append(uiRow.content, row.Text[:tagIndex[0]])
@@ -102,7 +112,7 @@ func (p *state) Refresh() error {
 				row.Text = row.Text[tagIndex[1]:]
 			}
 			uiRow.content = append(uiRow.content, row.Text)
-			p.currentUIRefRows[tag] = append(p.currentUIRefRows[tag], uiRow)
+			p.currentUIRefRows[tag] = append(p.currentUIRefRows[tag], &uiRow)
 		}
 	}
 
@@ -130,6 +140,11 @@ func main() {
 	checkErr(err)
 
 	programState.db = &exoDB
+	programState.tagList.Axis = layout.Vertical
+	programState.rowList.Axis = layout.Vertical
+	programState.refList.Axis = layout.Vertical
+	programState.newRowEditor.SingleLine = true
+	programState.newRowEditor.Submit = true
 
 	t := time.Now()
 	tag, err = programState.db.AddTag(t.Format("January 02 2006"))
@@ -150,10 +165,6 @@ func loop(w *app.Window) {
 	gofont.Register()
 	th := material.NewTheme()
 	gtx := layout.NewContext(w.Queue())
-	programState.tagList.Axis = layout.Vertical
-	programState.rowList.Axis = layout.Vertical
-	programState.newRowEditor.SingleLine = true
-	programState.newRowEditor.Submit = true
 
 	for e := range w.Events() {
 		if e, ok := e.(system.FrameEvent); ok {
@@ -249,23 +260,24 @@ func render(gtx *layout.Context, th *material.Theme) {
 								})
 							}),
 							layout.Rigid(func() {
-								var cachedUIRefRows = programState.currentUIRefRows
+								//var cachedUIRefRows = programState.currentUIRefRows
 
 								content := make([]interface{}, 0)
 								for _, tag := range programState.sortedRefTagsKeys {
 									content = append(content, tag)
-									for _, uiRefRow := range cachedUIRefRows[tag] {
+									for _, uiRefRow := range programState.currentUIRefRows[tag] {
 										content = append(content, uiRefRow)
 									}
 								}
-								programState.rowList.Layout(gtx, len(content), func(i int) {
+								programState.refList.Layout(gtx, len(content), func(i int) {
 									in.Layout(gtx, func() {
 										switch v := content[i].(type) {
 										case db.Tag:
 											// source tag for refs
 											th.H5(v.Name).Layout(gtx)
-										case uiRow:
+										case *uiRow:
 											// refs themselves
+											//fmt.Println("Ref")
 											v.layout(gtx, th)
 										}
 									})
@@ -280,28 +292,47 @@ func render(gtx *layout.Context, th *material.Theme) {
 }
 
 func (r *uiRow) layout(gtx *layout.Context, th *material.Theme) {
-	flexChildren := []layout.FlexChild{}
-	for _, item := range r.content {
-		switch v := item.(type) {
-		case string:
-			flexChildren = append(flexChildren, layout.Rigid(func() {
-				th.Body1(v).Layout(gtx)
-			}))
-		case *uiTagButton:
-			flexChildren = append(flexChildren, layout.Rigid(func() {
-				v.layout(gtx, th)
-			}))
-
-		default:
-			panic("unknown type encountered in uiRow.content")
+	//fmt.Println(r.editButton)
+	for r.editButton.Clicked(gtx) {
+		r.editing = !r.editing
+		r.editor.Focus()
+	}
+	for _, e := range r.editor.Events(gtx) {
+		switch e := e.(type) {
+		case widget.SubmitEvent:
+			if r.editor.Text() != "" {
+				err := programState.db.UpdateRowText(r.row.ID, e.Text)
+				checkErr(err)
+			}
+			r.editing = false
+			programState.Refresh()
 		}
 	}
-	layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, flexChildren...)
-}
+	if !r.editing {
+		flexChildren := []layout.FlexChild{}
+		for _, item := range r.content {
+			switch v := item.(type) {
+			case string:
+				flexChildren = append(flexChildren, layout.Rigid(func() {
+					th.Body1(v).Layout(gtx)
+				}))
+			case *uiTagButton:
+				flexChildren = append(flexChildren, layout.Rigid(func() {
+					v.layout(gtx, th)
+				}))
 
-func switchTag(tag db.Tag) {
-	programState.currentDBTag = tag
-	programState.Refresh()
+			default:
+				panic("unknown type encountered in uiRow.content")
+			}
+		}
+		flexChildren = append(flexChildren, layout.Flexed(1, func() {}))
+		flexChildren = append(flexChildren, layout.Rigid(func() {
+			th.Button("Edit").Layout(gtx, &r.editButton)
+		}))
+		layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, flexChildren...)
+	} else {
+		th.Editor("").Layout(gtx, &r.editor)
+	}
 }
 
 func (t *uiTagButton) layout(gtx *layout.Context, th *material.Theme) {
