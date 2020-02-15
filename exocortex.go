@@ -28,6 +28,7 @@ type state struct {
 	tagList           layout.List
 	rowList           layout.List
 	refList           layout.List
+	todayButton       widget.Button
 	newRowEditor      widget.Editor
 	currentDBTag      db.Tag
 	currentDBRows     []db.Row
@@ -152,8 +153,6 @@ func main() {
 
 	switchTag(tag)
 
-	programState.Refresh()
-
 	go func() {
 		w := app.NewWindow()
 		loop(w)
@@ -190,14 +189,32 @@ func render(gtx *layout.Context, th *material.Theme) {
 		}
 	}
 	in := layout.UniformInset(unit.Dp(8))
+	for programState.todayButton.Clicked(gtx) {
+		in.Layout(gtx, func() {
+			t := time.Now()
+			tag, err := programState.db.AddTag(t.Format("January 02 2006"))
+			checkErr(err)
+
+			switchTag(tag)
+		})
+	}
 	layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
 		// all tags pane
 		layout.Flexed(0.2, func() {
 			layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 				layout.Rigid(func() {
-					in.Layout(gtx, func() {
-						th.H3("Tags").Layout(gtx)
-					})
+					layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+						layout.Rigid(func() {
+							in.Layout(gtx, func() {
+								th.H3("Tags").Layout(gtx)
+							})
+						}),
+						layout.Rigid(func() {
+							in.Layout(gtx, func() {
+								th.Button("Today").Layout(gtx, &programState.todayButton)
+							})
+						}),
+					)
 				}),
 				layout.Rigid(func() {
 					in.Layout(gtx, func() {
@@ -300,6 +317,8 @@ func (r *uiRow) layout(gtx *layout.Context, th *material.Theme) {
 			if r.editor.Text() != "" {
 				err := programState.db.UpdateRowText(r.row.ID, e.Text)
 				checkErr(err)
+			} else {
+				programState.db.DeleteRowByID(r.row.ID)
 			}
 			r.editing = false
 			programState.Refresh()

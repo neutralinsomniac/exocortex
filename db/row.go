@@ -51,6 +51,43 @@ End:
 	return row, err
 }
 
+func sqlDeleteRowByID(tx *sql.Tx, id int64) error {
+	var statement *sql.Stmt
+	var err error
+
+	statement, err = tx.Prepare("DELETE FROM row WHERE id=?")
+	if err != nil {
+		goto End
+	}
+
+	_, err = statement.Exec(id)
+	if err != nil {
+		goto End
+	}
+
+End:
+	return err
+}
+
+func (e *ExoDB) DeleteRowByID(id int64) error {
+	var tx *sql.Tx
+	var err error
+
+	tx, err = e.conn.Begin()
+	if err != nil {
+		goto End
+	}
+
+	err = sqlDeleteRowByID(tx, id)
+	if err != nil {
+		goto End
+	}
+
+End:
+	sqlCommitOrRollback(tx, err)
+	return err
+}
+
 func sqlGetRowsForTagID(tx *sql.Tx, tagID int64) ([]Row, error) {
 	var rows []Row
 	var sqlRows *sql.Rows
