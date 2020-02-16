@@ -11,6 +11,7 @@ import (
 	"gioui.org/io/pointer"
 	"gioui.org/io/system"
 	"gioui.org/layout"
+	"gioui.org/op"
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
@@ -365,6 +366,8 @@ func (r *uiRow) layout(gtx *layout.Context, th *material.Theme) {
 	}
 	if !r.editing {
 		flexChildren := []layout.FlexChild{}
+		m := new(op.MacroOp)
+		m.Record(gtx.Ops)
 		for _, item := range r.content {
 			switch v := item.(type) {
 			case string:
@@ -381,9 +384,13 @@ func (r *uiRow) layout(gtx *layout.Context, th *material.Theme) {
 			}
 		}
 		layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, flexChildren...)
+		dims := gtx.Dimensions
+		m.Stop()
 		// edit row handler
-		pointer.Rect(image.Rectangle{Max: gtx.Dimensions.Size}).Add(gtx.Ops)
+		pointer.Rect(image.Rectangle{Max: dims.Size}).Add(gtx.Ops)
 		pointer.InputOp{Key: r}.Add(gtx.Ops)
+		// and now draw the labels/buttons on top
+		m.Add()
 	} else {
 		th.Editor("").Layout(gtx, &r.editor)
 	}
