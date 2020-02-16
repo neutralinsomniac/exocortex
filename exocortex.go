@@ -49,11 +49,10 @@ type uiTagButton struct {
 }
 
 type uiRow struct {
-	row        db.Row
-	content    []interface{} // string(s) + uiTagButton(s)
-	editor     widget.Editor
-	editButton widget.Button
-	editing    bool
+	row     db.Row
+	content []interface{} // string(s) + uiTagButton(s)
+	editor  widget.Editor
+	editing bool
 }
 
 var programState state
@@ -343,10 +342,13 @@ func render(gtx *layout.Context, th *material.Theme) {
 }
 
 func (r *uiRow) layout(gtx *layout.Context, th *material.Theme) {
-	//fmt.Println(r.editButton)
-	for r.editButton.Clicked(gtx) {
-		r.editing = !r.editing
-		r.editor.Focus()
+	for _, e := range gtx.Events(r) {
+		if e, ok := e.(pointer.Event); ok {
+			if e.Type == pointer.Press {
+				r.editing = !r.editing
+				r.editor.Focus()
+			}
+		}
 	}
 	for _, e := range r.editor.Events(gtx) {
 		switch e := e.(type) {
@@ -378,11 +380,10 @@ func (r *uiRow) layout(gtx *layout.Context, th *material.Theme) {
 				panic("unknown type encountered in uiRow.content")
 			}
 		}
-		flexChildren = append(flexChildren, layout.Flexed(1, func() {}))
-		flexChildren = append(flexChildren, layout.Rigid(func() {
-			th.Button("Edit").Layout(gtx, &r.editButton)
-		}))
 		layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, flexChildren...)
+		// edit row handler
+		pointer.Rect(image.Rectangle{Max: gtx.Dimensions.Size}).Add(gtx.Ops)
+		pointer.InputOp{Key: r}.Add(gtx.Ops)
 	} else {
 		th.Editor("").Layout(gtx, &r.editor)
 	}
