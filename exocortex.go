@@ -272,7 +272,9 @@ func render(gtx *layout.Context, th *material.Theme) {
 									pointer.Rect(image.Rectangle{Max: gtx.Dimensions.Size}).Add(gtx.Ops)
 									pointer.InputOp{Key: programState.currentDBTag}.Add(gtx.Ops)
 								} else {
-									th.Editor("New tag name").Layout(gtx, &programState.tagNameEditor)
+									editor := th.Editor("New tag name")
+									editor.TextSize = th.H3("").TextSize
+									editor.Layout(gtx, &programState.tagNameEditor)
 								}
 							})
 						}),
