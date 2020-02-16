@@ -2,11 +2,13 @@ package main
 
 import (
 	"fmt"
+	"image"
 	"regexp"
 	"sort"
 	"time"
 
 	"gioui.org/app"
+	"gioui.org/io/pointer"
 	"gioui.org/io/system"
 	"gioui.org/layout"
 	"gioui.org/unit"
@@ -30,6 +32,8 @@ type state struct {
 	refList           layout.List
 	todayButton       widget.Button
 	newRowEditor      widget.Editor
+	tagNameEditor     widget.Editor
+	editingTagName    bool
 	currentDBTag      db.Tag
 	currentDBRows     []db.Row
 	currentDBRefs     db.Refs
@@ -65,6 +69,8 @@ func (p *state) Refresh() error {
 	fmt.Println("refresh!")
 	allTags, err := p.db.GetAllTags()
 	checkErr(err)
+
+	p.tagNameEditor.SetText(p.currentDBTag.Name)
 
 	p.allTags = make([]uiTagButton, 0)
 	for _, tag := range allTags {
@@ -144,6 +150,8 @@ func main() {
 	programState.tagList.Axis = layout.Vertical
 	programState.rowList.Axis = layout.Vertical
 	programState.refList.Axis = layout.Vertical
+	programState.tagNameEditor.SingleLine = true
+	programState.tagNameEditor.Submit = true
 	programState.newRowEditor.SingleLine = true
 	programState.newRowEditor.Submit = true
 
@@ -177,6 +185,28 @@ func loop(w *app.Window) {
 }
 
 func render(gtx *layout.Context, th *material.Theme) {
+	// click on tag header handler
+	for _, e := range gtx.Events(programState.currentDBTag) {
+		if e, ok := e.(pointer.Event); ok {
+			if e.Type == pointer.Press {
+				programState.editingTagName = true
+				programState.tagNameEditor.Focus()
+			}
+		}
+	}
+	// rename tag editor handler
+	for _, e := range programState.tagNameEditor.Events(gtx) {
+		switch e := e.(type) {
+		case widget.SubmitEvent:
+			if programState.tagNameEditor.Text() != "" {
+				tag, err := programState.db.RenameTag(programState.currentDBTag.Name, e.Text)
+				checkErr(err)
+				switchTag(tag)
+				programState.editingTagName = false
+				programState.Refresh()
+			}
+		}
+	}
 	for _, e := range programState.newRowEditor.Events(gtx) {
 		switch e := e.(type) {
 		case widget.SubmitEvent:
@@ -188,16 +218,14 @@ func render(gtx *layout.Context, th *material.Theme) {
 			}
 		}
 	}
-	in := layout.UniformInset(unit.Dp(8))
 	for programState.todayButton.Clicked(gtx) {
-		in.Layout(gtx, func() {
-			t := time.Now()
-			tag, err := programState.db.AddTag(t.Format("January 02 2006"))
-			checkErr(err)
+		t := time.Now()
+		tag, err := programState.db.AddTag(t.Format("January 02 2006"))
+		checkErr(err)
 
-			switchTag(tag)
-		})
+		switchTag(tag)
 	}
+	in := layout.UniformInset(unit.Dp(8))
 	layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
 		// all tags pane
 		layout.Flexed(0.2, func() {
@@ -238,7 +266,14 @@ func render(gtx *layout.Context, th *material.Theme) {
 						// current tag name
 						layout.Rigid(func() {
 							in.Layout(gtx, func() {
-								th.H3(programState.currentDBTag.Name).Layout(gtx)
+								if programState.editingTagName == false {
+									th.H3(programState.currentDBTag.Name).Layout(gtx)
+									// add edit tag handler
+									pointer.Rect(image.Rectangle{Max: gtx.Dimensions.Size}).Add(gtx.Ops)
+									pointer.InputOp{Key: programState.currentDBTag}.Add(gtx.Ops)
+								} else {
+									th.Editor("New tag name").Layout(gtx, &programState.tagNameEditor)
+								}
 							})
 						}),
 						// editor widget for adding a new row

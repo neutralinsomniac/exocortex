@@ -264,7 +264,7 @@ End:
 	return err
 }
 
-func (e *ExoDB) RenameTag(oldname string, newname string) error {
+func (e *ExoDB) RenameTag(oldname string, newname string) (Tag, error) {
 	var tx *sql.Tx
 	var refs Refs
 	var tag Tag
@@ -303,5 +303,5 @@ func (e *ExoDB) RenameTag(oldname string, newname string) error {
 End:
 	sqlCommitOrRollback(tx, err)
 
-	return err
+	return tag, err
 }

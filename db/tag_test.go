@@ -150,7 +150,7 @@ func TestRenameTag(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = db.RenameTag("test", "test4")
+	_, err = db.RenameTag("test", "test4")
 	if err != nil {
 		t.Fatal(err)
 	}
