@@ -71,6 +71,7 @@ func (p *state) Refresh() error {
 	checkErr(err)
 
 	p.tagNameEditor.SetText(p.currentDBTag.Name)
+	programState.editingTagName = false
 
 	p.allTags = make([]uiTagButton, 0)
 	for _, tag := range allTags {
@@ -213,7 +214,6 @@ func render(gtx *layout.Context, th *material.Theme) {
 				tag, err := programState.db.RenameTag(programState.currentDBTag.Name, e.Text)
 				checkErr(err)
 				switchTag(tag)
-				programState.editingTagName = false
 				programState.Refresh()
 			}
 		}
