@@ -343,14 +343,6 @@ func render(gtx *layout.Context, th *material.Theme) {
 }
 
 func (r *uiRow) layout(gtx *layout.Context, th *material.Theme) {
-	for _, e := range gtx.Events(r) {
-		if e, ok := e.(pointer.Event); ok {
-			if e.Type == pointer.Press {
-				r.editing = !r.editing
-				r.editor.Focus()
-			}
-		}
-	}
 	for _, e := range r.editor.Events(gtx) {
 		switch e := e.(type) {
 		case widget.SubmitEvent:
@@ -365,9 +357,9 @@ func (r *uiRow) layout(gtx *layout.Context, th *material.Theme) {
 		}
 	}
 	if !r.editing {
-		flexChildren := []layout.FlexChild{}
 		m := new(op.MacroOp)
 		m.Record(gtx.Ops)
+		flexChildren := []layout.FlexChild{}
 		for _, item := range r.content {
 			switch v := item.(type) {
 			case string:
@@ -393,6 +385,14 @@ func (r *uiRow) layout(gtx *layout.Context, th *material.Theme) {
 		m.Add()
 	} else {
 		th.Editor("").Layout(gtx, &r.editor)
+	}
+	for _, e := range gtx.Events(r) {
+		if e, ok := e.(pointer.Event); ok {
+			if e.Type == pointer.Release {
+				r.editing = !r.editing
+				r.editor.Focus()
+			}
+		}
 	}
 }
 
