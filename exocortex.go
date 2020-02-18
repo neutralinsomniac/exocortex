@@ -195,6 +195,16 @@ func render(gtx *layout.Context, th *material.Theme) {
 			}
 		}
 	}
+	for _, t := range programState.sortedRefTagsKeys {
+		for _, e := range gtx.Events(t) {
+			if e, ok := e.(pointer.Event); ok {
+				if e.Type == pointer.Press {
+					switchTag(t)
+					programState.Refresh()
+				}
+			}
+		}
+	}
 	// rename tag editor handler
 	for _, e := range programState.tagNameEditor.Events(gtx) {
 		switch e := e.(type) {
@@ -314,7 +324,6 @@ func render(gtx *layout.Context, th *material.Theme) {
 							layout.Rigid(func() {
 								in.Layout(gtx, func() {
 									th.H4("References").Layout(gtx)
-
 								})
 							}),
 							layout.Rigid(func() {
@@ -331,6 +340,8 @@ func render(gtx *layout.Context, th *material.Theme) {
 										case db.Tag:
 											// source tag for refs
 											th.H5(v.Name).Layout(gtx)
+											pointer.Rect(image.Rectangle{Max: gtx.Dimensions.Size}).Add(gtx.Ops)
+											pointer.InputOp{Key: v}.Add(gtx.Ops)
 										case *uiRow:
 											// refs themselves
 											v.layout(gtx, th)
