@@ -273,7 +273,7 @@ func render(gtx *layout.Context, th *material.Theme) {
 		// space
 		layout.Flexed(0.05, func() {}),
 		// selected tag rows pane
-		layout.Flexed(0.75, func() {
+		layout.Rigid(func() {
 			layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 				layout.Rigid(func() {
 					layout.Flex{Axis: layout.Vertical}.Layout(gtx,
