@@ -148,6 +148,7 @@ func main() {
 
 	programState.db = &exoDB
 	programState.tagList.Axis = layout.Vertical
+	programState.tagList.Alignment = layout.Start
 	programState.rowList.Axis = layout.Vertical
 	programState.refList.Axis = layout.Vertical
 	programState.tagNameEditor.SingleLine = true
@@ -226,9 +227,10 @@ func render(gtx *layout.Context, th *material.Theme) {
 		switchTag(tag)
 	}
 	in := layout.UniformInset(unit.Dp(8))
+	var tagsHeaderDims layout.Dimensions
 	layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
 		// all tags pane
-		layout.Flexed(0.2, func() {
+		layout.Rigid(func() {
 			layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 				layout.Rigid(func() {
 					layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
@@ -243,12 +245,14 @@ func render(gtx *layout.Context, th *material.Theme) {
 							})
 						}),
 					)
+					tagsHeaderDims = gtx.Dimensions
 				}),
 				layout.Rigid(func() {
 					in.Layout(gtx, func() {
 						in := layout.UniformInset(unit.Dp(4))
 						programState.tagList.Layout(gtx, len(programState.allTags), func(i int) {
 							in.Layout(gtx, func() {
+								gtx.Constraints.Width.Min = tagsHeaderDims.Size.X
 								programState.allTags[i].layout(gtx, th)
 							})
 						})
