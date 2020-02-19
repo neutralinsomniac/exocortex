@@ -188,7 +188,7 @@ func loop(w *app.Window) {
 
 func render(gtx *layout.Context, th *material.Theme) {
 	// click on tag header handler
-	for _, e := range gtx.Events(programState.currentDBTag) {
+	for _, e := range gtx.Events(&programState.currentDBTag) {
 		if e, ok := e.(pointer.Event); ok {
 			if e.Type == pointer.Press {
 				programState.editingTagName = true
@@ -282,7 +282,7 @@ func render(gtx *layout.Context, th *material.Theme) {
 									th.H3(programState.currentDBTag.Name).Layout(gtx)
 									// add edit tag handler
 									pointer.Rect(image.Rectangle{Max: gtx.Dimensions.Size}).Add(gtx.Ops)
-									pointer.InputOp{Key: programState.currentDBTag}.Add(gtx.Ops)
+									pointer.InputOp{Key: &programState.currentDBTag}.Add(gtx.Ops)
 								} else {
 									editor := th.Editor("New tag name")
 									editor.TextSize = th.H3("").TextSize
