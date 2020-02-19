@@ -233,6 +233,10 @@ func render(gtx *layout.Context, th *material.Theme) {
 				programState.newRowEditor.SetText("")
 				programState.Refresh()
 			}
+		case widget.KeyEvent:
+			if e.Key.Name == key.NameEscape {
+				programState.newRowEditor.SetText("")
+			}
 		}
 	}
 	for programState.todayButton.Clicked(gtx) {
