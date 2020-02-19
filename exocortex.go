@@ -190,7 +190,7 @@ func render(gtx *layout.Context, th *material.Theme) {
 	// click on tag header handler
 	for _, e := range gtx.Events(&programState.currentDBTag) {
 		if e, ok := e.(pointer.Event); ok {
-			if e.Type == pointer.Press {
+			if e.Type == pointer.Release {
 				programState.editingTagName = true
 				programState.tagNameEditor.Focus()
 			}
@@ -199,7 +199,7 @@ func render(gtx *layout.Context, th *material.Theme) {
 	for _, t := range programState.sortedRefTagsKeys {
 		for _, e := range gtx.Events(t) {
 			if e, ok := e.(pointer.Event); ok {
-				if e.Type == pointer.Press {
+				if e.Type == pointer.Release {
 					switchTag(t)
 					programState.Refresh()
 				}
