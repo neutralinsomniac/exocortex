@@ -1,11 +1,11 @@
 dmitri.shuralyov.com/gpu/mtl v0.0.0-20190408044501-666a987793e9/go.mod h1:H6x//7gZCb22OMCxBHrMx7a5I7Hp++hsVxbQ4BYO7hU=
-gioui.org v0.0.0-20200212080447-fd5dfacb4043 h1:XaTm7Z3cWaW5NfHAZBcWjXiI0JCMiFY/sGCy/DeiNck=
-gioui.org v0.0.0-20200212080447-fd5dfacb4043/go.mod h1:AHI9rFr6AEEHCb8EPVtb/p5M+NMJRKH58IOp8O3Je04=
 github.com/BurntSushi/xgb v0.0.0-20160522181843-27f122750802/go.mod h1:IVnqGOEym/WlBOVXweHU+Q+/VP0lqqI8lqeDx9IjBqo=
 github.com/go-gl/glfw v0.0.0-20190409004039-e6da0acd62b1/go.mod h1:vR7hzQXu2zJy9AVAgeJqvqgH9Q5CA+iKCZ2gyEVpxRU=
 github.com/go-gl/glfw/v3.3/glfw v0.0.0-20191125211704-12ad95a8df72/go.mod h1:tQ2UAYgL5IevRw8kRxooKSPJfGvJ9fJQFa0TUsXzTg8=
 github.com/mattn/go-sqlite3 v2.0.3+incompatible h1:gXHsfypPkaMZrKbD5209QV9jbUTJKjyR5WD3HYQSd+U=
 github.com/mattn/go-sqlite3 v2.0.3+incompatible/go.mod h1:FPy6KqzDD04eiIsT53CuJW3U88zkxoIYsOqkbpncsNc=
+github.com/neutralinsomniac/gio v0.0.0-20200219141409-ed218619c89f h1:lY44QfSKm1IdcJFq9yR5j7u1pHgEzuIVCQRJbECUg6s=
+github.com/neutralinsomniac/gio v0.0.0-20200219141409-ed218619c89f/go.mod h1:gCebcdspFoQhy5WhyikXHoO+wSCou6MAlGEqKslenTQ=
 golang.org/x/crypto v0.0.0-20190308221718-c2843e01d9a2/go.mod h1:djNgcEr1/C05ACkg1iLfiJU5Ep61QUkGW8qpdssI0+w=
 golang.org/x/crypto v0.0.0-20190510104115-cbcb75029529/go.mod h1:yigFU9vqHzYiE8UmvKecakEJjdnWj3jj499lnFckfCI=
 golang.org/x/crypto v0.0.0-20191011191535-87dc89f01550/go.mod h1:yigFU9vqHzYiE8UmvKecakEJjdnWj3jj499lnFckfCI=

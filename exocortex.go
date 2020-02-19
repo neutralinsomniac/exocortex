@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"gioui.org/app"
+	"gioui.org/io/key"
 	"gioui.org/io/pointer"
 	"gioui.org/io/system"
 	"gioui.org/layout"
@@ -216,6 +217,11 @@ func render(gtx *layout.Context, th *material.Theme) {
 				switchTag(tag)
 				programState.Refresh()
 			}
+		case widget.KeyEvent:
+			if e.Key.Name == key.NameEscape {
+				programState.tagNameEditor.SetText(programState.currentDBTag.Name)
+				programState.editingTagName = false
+			}
 		}
 	}
 	for _, e := range programState.newRowEditor.Events(gtx) {
@@ -367,6 +373,11 @@ func (r *uiRow) layout(gtx *layout.Context, th *material.Theme) {
 			}
 			r.editing = false
 			programState.Refresh()
+		case widget.KeyEvent:
+			if e.Key.Name == key.NameEscape {
+				r.editor.SetText(r.row.Text)
+				r.editing = false
+			}
 		}
 	}
 	if !r.editing {
