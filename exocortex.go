@@ -5,6 +5,7 @@ import (
 	"image"
 	"regexp"
 	"sort"
+	"strings"
 	"time"
 
 	"gioui.org/app"
@@ -33,6 +34,7 @@ type state struct {
 	rowList           layout.List
 	refList           layout.List
 	todayButton       widget.Button
+	tagFilterEditor   widget.Editor
 	newRowEditor      widget.Editor
 	tagNameEditor     widget.Editor
 	editingTagName    bool
@@ -43,6 +45,7 @@ type state struct {
 	currentUIRefRows  map[db.Tag][]uiRow
 	sortedRefTagsKeys []db.Tag
 	allTags           []uiTagButton
+	filteredTags      []*uiTagButton
 }
 
 type uiTagButton struct {
@@ -62,6 +65,16 @@ var programState state
 func switchTag(tag db.Tag) {
 	programState.currentDBTag = tag
 	programState.Refresh()
+	programState.newRowEditor.Focus()
+}
+
+func (p *state) FilterTags() {
+	p.filteredTags = make([]*uiTagButton, 0)
+	for i, t := range p.allTags {
+		if strings.Contains(strings.ToLower(t.tag.Name), strings.ToLower(p.tagFilterEditor.Text())) {
+			p.filteredTags = append(p.filteredTags, &p.allTags[i])
+		}
+	}
 }
 
 func (p *state) Refresh() error {
@@ -78,6 +91,8 @@ func (p *state) Refresh() error {
 	for _, tag := range allTags {
 		p.allTags = append(p.allTags, uiTagButton{tag: tag})
 	}
+	p.FilterTags()
+
 	p.currentDBRows, err = p.db.GetRowsForTagID(p.currentDBTag.ID)
 	checkErr(err)
 	p.currentUIRows = make([]uiRow, 0)
@@ -153,6 +168,8 @@ func main() {
 	programState.tagList.Alignment = layout.Start
 	programState.rowList.Axis = layout.Vertical
 	programState.refList.Axis = layout.Vertical
+	programState.tagFilterEditor.SingleLine = true
+	programState.tagFilterEditor.Submit = true
 	programState.tagNameEditor.SingleLine = true
 	programState.tagNameEditor.Submit = true
 	programState.newRowEditor.SingleLine = true
@@ -197,6 +214,7 @@ func render(gtx *layout.Context, th *material.Theme) {
 			}
 		}
 	}
+	// click on ref tag name handler
 	for _, t := range programState.sortedRefTagsKeys {
 		for _, e := range gtx.Events(t) {
 			if e, ok := e.(pointer.Event); ok {
@@ -224,6 +242,7 @@ func render(gtx *layout.Context, th *material.Theme) {
 			}
 		}
 	}
+	// new tag row editor handler
 	for _, e := range programState.newRowEditor.Events(gtx) {
 		switch e := e.(type) {
 		case widget.SubmitEvent:
@@ -239,12 +258,30 @@ func render(gtx *layout.Context, th *material.Theme) {
 			}
 		}
 	}
+	// today button handler
 	for programState.todayButton.Clicked(gtx) {
 		t := time.Now()
 		tag, err := programState.db.AddTag(t.Format("January 02 2006"))
 		checkErr(err)
 
 		switchTag(tag)
+	}
+	for _, e := range programState.tagFilterEditor.Events(gtx) {
+		switch e := e.(type) {
+		case widget.SubmitEvent:
+			tag, err := programState.db.AddTag(e.Text)
+			checkErr(err)
+			programState.tagFilterEditor.SetText("")
+			switchTag(tag)
+			programState.Refresh()
+		case widget.KeyEvent:
+			if e.Key.Name == key.NameEscape {
+				programState.tagFilterEditor.SetText("")
+				programState.FilterTags()
+			}
+		case widget.ChangeEvent:
+			programState.FilterTags()
+		}
 	}
 	in := layout.UniformInset(unit.Dp(8))
 	var tagsHeaderDims layout.Dimensions
@@ -268,12 +305,20 @@ func render(gtx *layout.Context, th *material.Theme) {
 					tagsHeaderDims = gtx.Dimensions
 				}),
 				layout.Rigid(func() {
+					editor := th.Editor("Filter/New Tag")
+					editor.TextSize = th.H5("").TextSize
+					layout.UniformInset(unit.Dp(16)).Layout(gtx, func() {
+						gtx.Constraints.Width.Max = tagsHeaderDims.Size.X
+						editor.Layout(gtx, &programState.tagFilterEditor)
+					})
+				}),
+				layout.Rigid(func() {
 					in.Layout(gtx, func() {
 						in := layout.UniformInset(unit.Dp(4))
-						programState.tagList.Layout(gtx, len(programState.allTags), func(i int) {
+						programState.tagList.Layout(gtx, len(programState.filteredTags), func(i int) {
 							in.Layout(gtx, func() {
 								gtx.Constraints.Width.Min = tagsHeaderDims.Size.X
-								programState.allTags[i].layout(gtx, th)
+								programState.filteredTags[i].layout(gtx, th)
 							})
 						})
 					})
