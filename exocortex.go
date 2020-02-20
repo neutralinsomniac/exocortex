@@ -65,7 +65,6 @@ var programState state
 func switchTag(tag db.Tag) {
 	programState.currentDBTag = tag
 	programState.Refresh()
-	programState.newRowEditor.Focus()
 }
 
 func (p *state) FilterTags() {
@@ -149,6 +148,8 @@ func (p *state) Refresh() error {
 	}
 
 	sort.Slice(p.sortedRefTagsKeys, func(i, j int) bool { return p.sortedRefTagsKeys[i].Name < p.sortedRefTagsKeys[j].Name })
+
+	programState.newRowEditor.Focus()
 
 	return err
 }
