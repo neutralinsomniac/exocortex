@@ -453,8 +453,13 @@ func (r *uiRow) layout(gtx *layout.Context, th *material.Theme) {
 			programState.Refresh()
 		case widget.KeyEvent:
 			if e.Key.Name == key.NameEscape {
-				r.editor.SetText(r.row.Text)
-				r.editing = false
+				if r.editor.Text() == "" {
+					r.editor.SetText(r.row.Text)
+					r.editing = false
+					programState.newRowEditor.Focus()
+				} else {
+					r.editor.SetText("")
+				}
 			}
 		}
 	}
