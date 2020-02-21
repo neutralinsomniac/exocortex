@@ -435,7 +435,13 @@ func (r *uiRow) layout(gtx *layout.Context, th *material.Theme) {
 			}
 			r.editing = false
 			programState.DeleteTagIfEmpty(r.row.TagID)
-			programState.GoToToday()
+			if programState.currentDBTag.ID != r.row.TagID {
+				programState.DeleteTagIfEmpty(programState.currentDBTag.ID)
+			}
+			// if current tag is gone, switch
+			if _, err := programState.db.GetTagByID(programState.currentDBTag.ID); err != nil {
+				programState.GoToToday()
+			}
 			programState.Refresh()
 		case widget.KeyEvent:
 			if e.Key.Name == key.NameEscape {
