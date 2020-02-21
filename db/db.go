@@ -18,12 +18,28 @@ func (e *ExoDB) LoadSchema() error {
 
 func (e *ExoDB) Open(filename string) error {
 	var err error
+
 	e.conn, err = sql.Open("sqlite3", filename)
+	if err != nil {
+		goto End
+	}
+
+	err = e.enableForeignKeys()
+
+End:
 	return err
 }
 
 func (e *ExoDB) Close() {
 	e.conn.Close()
+}
+
+func (e *ExoDB) enableForeignKeys() error {
+	var err error
+
+	_, err = e.conn.Exec("PRAGMA foreign_keys = ON")
+
+	return err
 }
 
 func sqlCommitOrRollback(tx *sql.Tx, err error) {
