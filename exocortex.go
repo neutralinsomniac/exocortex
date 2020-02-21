@@ -76,6 +76,26 @@ func (p *state) FilterTags() {
 	}
 }
 
+func (p *state) DeleteTagIfEmpty(id int64) {
+	rows, err := p.db.GetRowsForTagID(id)
+	checkErr(err)
+
+	refs, err := p.db.GetRefsToTagByTagID(id)
+	checkErr(err)
+
+	if len(rows)+len(refs) == 0 {
+		p.db.DeleteTagByID(id)
+	}
+}
+
+func (p *state) GoToToday() {
+	t := time.Now()
+	tag, err := programState.db.AddTag(t.Format("January 02 2006"))
+	checkErr(err)
+
+	switchTag(tag)
+}
+
 func (p *state) Refresh() error {
 	var err error
 
@@ -156,7 +176,6 @@ func (p *state) Refresh() error {
 
 func main() {
 	var exoDB db.ExoDB
-	var tag db.Tag
 	err := exoDB.Open("./exocortex.db")
 	checkErr(err)
 	defer exoDB.Close()
@@ -176,11 +195,7 @@ func main() {
 	programState.newRowEditor.SingleLine = true
 	programState.newRowEditor.Submit = true
 
-	t := time.Now()
-	tag, err = programState.db.AddTag(t.Format("January 02 2006"))
-	checkErr(err)
-
-	switchTag(tag)
+	programState.GoToToday()
 
 	go func() {
 		w := app.NewWindow()
@@ -261,11 +276,7 @@ func render(gtx *layout.Context, th *material.Theme) {
 	}
 	// today button handler
 	for programState.todayButton.Clicked(gtx) {
-		t := time.Now()
-		tag, err := programState.db.AddTag(t.Format("January 02 2006"))
-		checkErr(err)
-
-		switchTag(tag)
+		programState.GoToToday()
 	}
 	for _, e := range programState.tagFilterEditor.Events(gtx) {
 		switch e := e.(type) {
@@ -419,9 +430,12 @@ func (r *uiRow) layout(gtx *layout.Context, th *material.Theme) {
 				err := programState.db.UpdateRowText(r.row.ID, e.Text)
 				checkErr(err)
 			} else {
-				programState.db.DeleteRowByID(r.row.ID)
+				err := programState.db.DeleteRowByID(r.row.ID)
+				checkErr(err)
 			}
 			r.editing = false
+			programState.DeleteTagIfEmpty(r.row.TagID)
+			programState.GoToToday()
 			programState.Refresh()
 		case widget.KeyEvent:
 			if e.Key.Name == key.NameEscape {
