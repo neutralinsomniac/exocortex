@@ -284,11 +284,13 @@ func render(gtx *layout.Context, th *material.Theme) {
 	for _, e := range programState.tagFilterEditor.Events(gtx) {
 		switch e := e.(type) {
 		case widget.SubmitEvent:
-			tag, err := programState.db.AddTag(e.Text)
-			checkErr(err)
-			programState.tagFilterEditor.SetText("")
-			switchTag(tag)
-			programState.Refresh()
+			if e.Text != "" {
+				tag, err := programState.db.AddTag(e.Text)
+				checkErr(err)
+				programState.tagFilterEditor.SetText("")
+				switchTag(tag)
+				programState.Refresh()
+			}
 		case widget.KeyEvent:
 			if e.Key.Name == key.NameEscape {
 				programState.tagFilterEditor.SetText("")
