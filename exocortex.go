@@ -272,6 +272,9 @@ func render(gtx *layout.Context, th *material.Theme) {
 			if e.Key.Name == key.NameEscape {
 				programState.newRowEditor.SetText("")
 			}
+			if e.Key.Name == key.NameTab {
+				programState.tagFilterEditor.Focus()
+			}
 		}
 	}
 	// today button handler
@@ -290,6 +293,9 @@ func render(gtx *layout.Context, th *material.Theme) {
 			if e.Key.Name == key.NameEscape {
 				programState.tagFilterEditor.SetText("")
 				programState.FilterTags()
+			}
+			if e.Key.Name == key.NameTab {
+				programState.newRowEditor.Focus()
 			}
 		case widget.ChangeEvent:
 			programState.FilterTags()
