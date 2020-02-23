@@ -304,130 +304,133 @@ func render(gtx *layout.Context, th *material.Theme) {
 		}
 	}
 	in := layout.UniformInset(unit.Dp(8))
+	outerInset := layout.UniformInset(unit.Dp(16))
 	var tagsHeaderDims layout.Dimensions
-	layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
-		// all tags pane
-		layout.Rigid(func() {
-			layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-				layout.Rigid(func() {
-					layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-						layout.Rigid(func() {
-							in.Layout(gtx, func() {
-								th.H3("Tags").Layout(gtx)
-							})
-						}),
-						layout.Rigid(func() {
-							in.Layout(gtx, func() {
-								th.Button("Today").Layout(gtx, &programState.todayButton)
-							})
-						}),
-					)
-					tagsHeaderDims = gtx.Dimensions
-				}),
-				layout.Rigid(func() {
-					editor := th.Editor("Filter/New Tag")
-					editor.TextSize = th.H5("").TextSize
-					layout.UniformInset(unit.Dp(16)).Layout(gtx, func() {
-						gtx.Constraints.Width.Max = tagsHeaderDims.Size.X
-						editor.Layout(gtx, &programState.tagFilterEditor)
-					})
-				}),
-				layout.Rigid(func() {
-					in.Layout(gtx, func() {
-						in := layout.UniformInset(unit.Dp(4))
-						programState.tagList.Layout(gtx, len(programState.filteredTags), func(i int) {
-							in.Layout(gtx, func() {
-								gtx.Constraints.Width.Min = tagsHeaderDims.Size.X
-								programState.filteredTags[i].layout(gtx, th)
-							})
-						})
-					})
-				}),
-			)
-		}),
-		// selected tag rows pane
-		layout.Flexed(1, func() {
-			layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-				layout.Rigid(func() {
-					layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-						// current tag name
-						layout.Rigid(func() {
-							in.Layout(gtx, func() {
-								if programState.editingTagName == false {
-									th.H3(programState.currentDBTag.Name).Layout(gtx)
-									// add edit tag handler
-									pointer.Rect(image.Rectangle{Max: gtx.Dimensions.Size}).Add(gtx.Ops)
-									pointer.InputOp{Key: &programState.currentDBTag}.Add(gtx.Ops)
-								} else {
-									editor := th.Editor("New tag name")
-									editor.TextSize = th.H3("").TextSize
-									editor.Layout(gtx, &programState.tagNameEditor)
-								}
-							})
-						}),
-						// editor widget for adding a new row
-						layout.Rigid(func() {
-							layout.Inset{Top: unit.Dp(8), Left: unit.Dp(8), Right: unit.Dp(8), Bottom: unit.Dp(16)}.Layout(gtx, func() {
-								th.Editor("New row").Layout(gtx, &programState.newRowEditor)
-							})
-						}),
-						// rows for current tag
-						layout.Rigid(func() {
-							in.Layout(gtx, func() {
-								var cachedUIRows = programState.currentUIRows
-								programState.rowList.Layout(gtx, len(cachedUIRows), func(i int) {
-									layout.Inset{Top: unit.Dp(4), Bottom: unit.Dp(4)}.Layout(gtx, func() {
-										cachedUIRows[i].layout(gtx, th)
-									})
-								})
-							})
-						}),
-					)
-				}),
-				// references pane
-				layout.Rigid(func() {
-					if len(programState.currentDBRefs) > 0 {
-						// count total refs for rowlist
-						refListLen := 0
-						for _, refs := range programState.currentDBRefs {
-							refListLen++            // for the source tag header
-							refListLen += len(refs) // for the rows themselves
-						}
-						layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+	outerInset.Layout(gtx, func() {
+		layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+			// all tags pane
+			layout.Rigid(func() {
+				layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+					layout.Rigid(func() {
+						layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 							layout.Rigid(func() {
 								in.Layout(gtx, func() {
-									th.H4("References").Layout(gtx)
+									th.H3("Tags").Layout(gtx)
 								})
 							}),
 							layout.Rigid(func() {
-								content := make([]interface{}, 0)
-								for _, tag := range programState.sortedRefTagsKeys {
-									content = append(content, tag)
-									for i, _ := range programState.currentUIRefRows[tag] {
-										content = append(content, &programState.currentUIRefRows[tag][i])
+								in.Layout(gtx, func() {
+									th.Button("Today").Layout(gtx, &programState.todayButton)
+								})
+							}),
+						)
+						tagsHeaderDims = gtx.Dimensions
+					}),
+					layout.Rigid(func() {
+						editor := th.Editor("Filter/New Tag")
+						editor.TextSize = th.H5("").TextSize
+						layout.UniformInset(unit.Dp(16)).Layout(gtx, func() {
+							gtx.Constraints.Width.Max = tagsHeaderDims.Size.X
+							editor.Layout(gtx, &programState.tagFilterEditor)
+						})
+					}),
+					layout.Rigid(func() {
+						in.Layout(gtx, func() {
+							in := layout.UniformInset(unit.Dp(4))
+							programState.tagList.Layout(gtx, len(programState.filteredTags), func(i int) {
+								in.Layout(gtx, func() {
+									gtx.Constraints.Width.Min = tagsHeaderDims.Size.X
+									programState.filteredTags[i].layout(gtx, th)
+								})
+							})
+						})
+					}),
+				)
+			}),
+			// selected tag rows pane
+			layout.Flexed(1, func() {
+				layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+					layout.Rigid(func() {
+						layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+							// current tag name
+							layout.Rigid(func() {
+								in.Layout(gtx, func() {
+									if programState.editingTagName == false {
+										th.H3(programState.currentDBTag.Name).Layout(gtx)
+										// add edit tag handler
+										pointer.Rect(image.Rectangle{Max: gtx.Dimensions.Size}).Add(gtx.Ops)
+										pointer.InputOp{Key: &programState.currentDBTag}.Add(gtx.Ops)
+									} else {
+										editor := th.Editor("New tag name")
+										editor.TextSize = th.H3("").TextSize
+										editor.Layout(gtx, &programState.tagNameEditor)
 									}
-								}
-								programState.refList.Layout(gtx, len(content), func(i int) {
-									in.Layout(gtx, func() {
-										switch v := content[i].(type) {
-										case db.Tag:
-											// source tag for refs
-											th.H5(v.Name).Layout(gtx)
-											pointer.Rect(image.Rectangle{Max: gtx.Dimensions.Size}).Add(gtx.Ops)
-											pointer.InputOp{Key: v}.Add(gtx.Ops)
-										case *uiRow:
-											// refs themselves
-											v.layout(gtx, th)
-										}
+								})
+							}),
+							// editor widget for adding a new row
+							layout.Rigid(func() {
+								layout.Inset{Top: unit.Dp(8), Left: unit.Dp(8), Right: unit.Dp(8), Bottom: unit.Dp(16)}.Layout(gtx, func() {
+									th.Editor("New row").Layout(gtx, &programState.newRowEditor)
+								})
+							}),
+							// rows for current tag
+							layout.Rigid(func() {
+								in.Layout(gtx, func() {
+									var cachedUIRows = programState.currentUIRows
+									programState.rowList.Layout(gtx, len(cachedUIRows), func(i int) {
+										layout.Inset{Top: unit.Dp(4), Bottom: unit.Dp(4)}.Layout(gtx, func() {
+											cachedUIRows[i].layout(gtx, th)
+										})
 									})
 								})
 							}),
 						)
-					}
-				}),
-			)
-		}),
-	)
+					}),
+					// references pane
+					layout.Rigid(func() {
+						if len(programState.currentDBRefs) > 0 {
+							// count total refs for rowlist
+							refListLen := 0
+							for _, refs := range programState.currentDBRefs {
+								refListLen++            // for the source tag header
+								refListLen += len(refs) // for the rows themselves
+							}
+							layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+								layout.Rigid(func() {
+									in.Layout(gtx, func() {
+										th.H4("References").Layout(gtx)
+									})
+								}),
+								layout.Rigid(func() {
+									content := make([]interface{}, 0)
+									for _, tag := range programState.sortedRefTagsKeys {
+										content = append(content, tag)
+										for i, _ := range programState.currentUIRefRows[tag] {
+											content = append(content, &programState.currentUIRefRows[tag][i])
+										}
+									}
+									programState.refList.Layout(gtx, len(content), func(i int) {
+										in.Layout(gtx, func() {
+											switch v := content[i].(type) {
+											case db.Tag:
+												// source tag for refs
+												th.H5(v.Name).Layout(gtx)
+												pointer.Rect(image.Rectangle{Max: gtx.Dimensions.Size}).Add(gtx.Ops)
+												pointer.InputOp{Key: v}.Add(gtx.Ops)
+											case *uiRow:
+												// refs themselves
+												v.layout(gtx, th)
+											}
+										})
+									})
+								}),
+							)
+						}
+					}),
+				)
+			}),
+		)
+	})
 }
 
 func (r *uiRow) layout(gtx *layout.Context, th *material.Theme) {
