@@ -13,7 +13,6 @@ import (
 var templates = template.Must(template.ParseGlob("templates/*"))
 
 var exoDB db.ExoDB
-var page Page
 
 type TagURL struct {
 	db.Tag
@@ -33,7 +32,7 @@ func checkErr(err error) {
 	}
 }
 
-func updatePage() error {
+func (p *Page) updatePage() error {
 	var err error
 	var tags []db.Tag
 
@@ -46,7 +45,12 @@ func updatePage() error {
 		goto End
 	}
 
-	page.AllDBTags = tags
+	p.AllDBTags = tags
+
+	p.AllTags = make([]TagURL, 0)
+	for _, t := range p.AllDBTags {
+		p.AllTags = append(p.AllTags, TagURL{Url: "/tag/" + strconv.Itoa(int(t.ID)), Tag: t})
+	}
 
 End:
 	return err
@@ -55,33 +59,18 @@ End:
 func tagHandler(w http.ResponseWriter, r *http.Request) {
 	var err error
 	var id int
+	var page Page
+	var idString string
 
-	idString := r.URL.Path[len("/tag/"):]
-	id, err = strconv.Atoi(idString)
-
-	page.CurrentTag, err = exoDB.GetTagByID(int64(id))
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	rootHandler(w, r)
-}
-
-func rootHandler(w http.ResponseWriter, r *http.Request) {
-	var err error
-
-	err = updatePage()
+	err = page.updatePage()
 	if err != nil {
 		goto End
 	}
 
-	page.AllTags = make([]TagURL, 0)
-	for _, t := range page.AllDBTags {
-		page.AllTags = append(page.AllTags, TagURL{Url: "/tag/" + strconv.Itoa(int(t.ID)), Tag: t})
-	}
+	idString = r.URL.Path[len("/tag/"):]
+	id, err = strconv.Atoi(idString)
 
-	err = templates.ExecuteTemplate(w, "index", page)
+	page.CurrentTag, err = exoDB.GetTagByID(int64(id))
 	if err != nil {
 		goto End
 	}
@@ -91,6 +80,40 @@ End:
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	page.render(w, r)
+}
+
+func (p *Page) render(w http.ResponseWriter, r *http.Request) {
+	var err error
+
+	err = templates.ExecuteTemplate(w, "index", p)
+	if err != nil {
+		goto End
+	}
+
+End:
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func rootHandler(w http.ResponseWriter, r *http.Request) {
+	var err error
+	var page Page
+
+	err = page.updatePage()
+	if err != nil {
+		goto End
+	}
+
+End:
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	page.render(w, r)
 }
 
 func main() {
