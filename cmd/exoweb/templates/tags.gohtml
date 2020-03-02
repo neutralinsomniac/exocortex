@@ -1,7 +1,5 @@
 {{define "allTags"}}
-<ul>
   {{range .}}
-    <li><a href={{.Url}}>{{.Name}}</a></li>
+    <h3><a href="/tag/{{.ID}}">{{.Name}}</a></h3>
   {{end}}
-</ul>
 {{end}}

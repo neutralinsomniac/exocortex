@@ -13,15 +13,10 @@ import (
 var templates = template.Must(template.ParseGlob("templates/*"))
 
 var exoDB db.ExoDB
-
-type TagURL struct {
-	db.Tag
-	Url string
-}
+var page Page
 
 type Page struct {
-	AllTags     []TagURL
-	AllDBTags   []db.Tag
+	AllTags     []db.Tag
 	CurrentTag  db.Tag
 	CurrentRows []db.Row
 }
@@ -45,12 +40,7 @@ func (p *Page) updatePage() error {
 		goto End
 	}
 
-	p.AllDBTags = tags
-
-	p.AllTags = make([]TagURL, 0)
-	for _, t := range p.AllDBTags {
-		p.AllTags = append(p.AllTags, TagURL{Url: "/tag/" + strconv.Itoa(int(t.ID)), Tag: t})
-	}
+	p.AllTags = tags
 
 End:
 	return err
@@ -59,13 +49,7 @@ End:
 func tagHandler(w http.ResponseWriter, r *http.Request) {
 	var err error
 	var id int
-	var page Page
 	var idString string
-
-	err = page.updatePage()
-	if err != nil {
-		goto End
-	}
 
 	idString = r.URL.Path[len("/tag/"):]
 	id, err = strconv.Atoi(idString)
@@ -99,19 +83,7 @@ End:
 }
 
 func rootHandler(w http.ResponseWriter, r *http.Request) {
-	var err error
-	var page Page
-
-	err = page.updatePage()
-	if err != nil {
-		goto End
-	}
-
-End:
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
+	page.CurrentTag = db.Tag{}
 
 	page.render(w, r)
 }
@@ -125,11 +97,12 @@ func main() {
 	err = exoDB.LoadSchema()
 	checkErr(err)
 
-	exoDB.AddTag("test1")
-	exoDB.AddTag("test2")
-	exoDB.AddTag("test3")
+	err = page.updatePage()
+	checkErr(err)
+
 	http.HandleFunc("/", rootHandler)
 	http.HandleFunc("/tag/", tagHandler)
+
 	fmt.Println("starting listener...")
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
