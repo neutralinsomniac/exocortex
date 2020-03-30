@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"image"
 	"regexp"
-	"sort"
 	"strings"
 	"time"
 
@@ -29,23 +28,19 @@ func checkErr(err error) {
 }
 
 type state struct {
-	db                *db.ExoDB
-	tagList           layout.List
-	rowList           layout.List
-	refList           layout.List
-	todayButton       widget.Button
-	tagFilterEditor   widget.Editor
-	newRowEditor      widget.Editor
-	tagNameEditor     widget.Editor
-	editingTagName    bool
-	currentDBTag      db.Tag
-	currentDBRows     []db.Row
-	currentDBRefs     db.Refs
-	currentUIRows     []uiRow
-	currentUIRefRows  map[db.Tag][]uiRow
-	sortedRefTagsKeys []db.Tag
-	allTags           []uiTagButton
-	filteredTags      []*uiTagButton
+	db.State
+	tagList          layout.List
+	rowList          layout.List
+	refList          layout.List
+	todayButton      widget.Button
+	tagFilterEditor  widget.Editor
+	newRowEditor     widget.Editor
+	tagNameEditor    widget.Editor
+	editingTagName   bool
+	currentUIRows    []uiRow
+	currentUIRefRows map[db.Tag][]uiRow
+	allTagButtons    []uiTagButton
+	filteredTags     []*uiTagButton
 }
 
 type uiTagButton struct {
@@ -62,70 +57,65 @@ type uiRow struct {
 
 var programState state
 
-func switchTag(tag db.Tag) {
-	programState.currentDBTag = tag
-	programState.Refresh()
-}
-
 func (p *state) FilterTags() {
 	p.filteredTags = make([]*uiTagButton, 0)
-	for i, t := range p.allTags {
+	for i, t := range p.allTagButtons {
 		if strings.Contains(strings.ToLower(t.tag.Name), strings.ToLower(p.tagFilterEditor.Text())) {
-			p.filteredTags = append(p.filteredTags, &p.allTags[i])
+			p.filteredTags = append(p.filteredTags, &p.allTagButtons[i])
 		}
 	}
 }
 
 func (p *state) DeleteTagIfEmpty(id int64) {
-	rows, err := p.db.GetRowsForTagID(id)
+	rows, err := p.DB.GetRowsForTagID(id)
 	checkErr(err)
 
-	refs, err := p.db.GetRefsToTagByTagID(id)
+	refs, err := p.DB.GetRefsToTagByTagID(id)
 	checkErr(err)
 
 	if len(rows)+len(refs) == 0 {
-		p.db.DeleteTagByID(id)
+		p.DB.DeleteTagByID(id)
 	}
 }
 
 func (p *state) GoToToday() {
 	t := time.Now()
-	tag, err := programState.db.AddTag(t.Format("January 02 2006"))
+	tag, err := programState.DB.AddTag(t.Format("January 02 2006"))
 	checkErr(err)
 
-	switchTag(tag)
+	p.CurrentDBTag = tag
+	p.Refresh()
 }
 
 func (p *state) Refresh() error {
 	var err error
 
 	fmt.Println("refresh!")
-	allTags, err := p.db.GetAllTags()
-	checkErr(err)
+	p.State.Refresh()
 
-	p.tagNameEditor.SetText(p.currentDBTag.Name)
+	p.tagNameEditor.SetText(p.CurrentDBTag.Name)
 	programState.editingTagName = false
 
-	p.allTags = make([]uiTagButton, 0)
-	for _, tag := range allTags {
-		p.allTags = append(p.allTags, uiTagButton{tag: tag})
+	p.allTagButtons = make([]uiTagButton, 0)
+	for _, tag := range p.AllDBTags {
+		p.allTagButtons = append(p.allTagButtons, uiTagButton{tag: tag})
 	}
 	p.FilterTags()
 
-	p.currentDBRows, err = p.db.GetRowsForTagID(p.currentDBTag.ID)
+	p.CurrentDBRows, err = p.DB.GetRowsForTagID(p.CurrentDBTag.ID)
 	checkErr(err)
 	p.currentUIRows = make([]uiRow, 0)
 
 	// split the text by tags and pre-calculate the row contents
 	re := regexp.MustCompile(`\[\[(.*?)\]\]`)
-	for _, row := range p.currentDBRows {
+	for _, row := range p.CurrentDBRows {
 		uiRow := uiRow{row: row, editor: widget.Editor{SingleLine: true, Submit: true}}
 		uiRow.editor.SetText(uiRow.row.Text)
 		for tagIndex := re.FindStringIndex(row.Text); tagIndex != nil; tagIndex = re.FindStringIndex(row.Text) {
 			// leading text
 			uiRow.content = append(uiRow.content, row.Text[:tagIndex[0]])
 			// tag button
-			tag, err := p.db.GetTagByName(row.Text[tagIndex[0]+2 : tagIndex[1]-2])
+			tag, err := p.DB.GetTagByName(row.Text[tagIndex[0]+2 : tagIndex[1]-2])
 			checkErr(err)
 			uiRow.content = append(uiRow.content, &uiTagButton{tag: tag})
 			row.Text = row.Text[tagIndex[1]:]
@@ -134,13 +124,8 @@ func (p *state) Refresh() error {
 		p.currentUIRows = append(p.currentUIRows, uiRow)
 	}
 
-	// refs
-	p.currentDBRefs, err = p.db.GetRefsToTagByTagID(p.currentDBTag.ID)
-	checkErr(err)
-	p.db.GetAllTags()
-
 	p.currentUIRefRows = make(map[db.Tag][]uiRow)
-	for tag, rows := range p.currentDBRefs {
+	for tag, rows := range p.CurrentDBRefs {
 		p.currentUIRefRows[tag] = make([]uiRow, 0)
 		for _, row := range rows {
 			uiRow := uiRow{row: row, editor: widget.Editor{SingleLine: true, Submit: true}}
@@ -149,7 +134,7 @@ func (p *state) Refresh() error {
 				// leading text
 				uiRow.content = append(uiRow.content, row.Text[:tagIndex[0]])
 				// tag button
-				tag, err := p.db.GetTagByName(row.Text[tagIndex[0]+2 : tagIndex[1]-2])
+				tag, err := p.DB.GetTagByName(row.Text[tagIndex[0]+2 : tagIndex[1]-2])
 				checkErr(err)
 				uiRow.content = append(uiRow.content, &uiTagButton{tag: tag})
 				row.Text = row.Text[tagIndex[1]:]
@@ -158,16 +143,6 @@ func (p *state) Refresh() error {
 			p.currentUIRefRows[tag] = append(p.currentUIRefRows[tag], uiRow)
 		}
 	}
-
-	// sort our ui ref row keys since map key order isn't stable
-	p.sortedRefTagsKeys = make([]db.Tag, len(p.currentDBRefs))
-	i := 0
-	for k := range p.currentDBRefs {
-		p.sortedRefTagsKeys[i] = k
-		i++
-	}
-
-	sort.Slice(p.sortedRefTagsKeys, func(i, j int) bool { return p.sortedRefTagsKeys[i].Name < p.sortedRefTagsKeys[j].Name })
 
 	programState.newRowEditor.Focus()
 
@@ -183,7 +158,7 @@ func main() {
 	err = exoDB.LoadSchema()
 	checkErr(err)
 
-	programState.db = &exoDB
+	programState.DB = &exoDB
 	programState.tagList.Axis = layout.Vertical
 	programState.tagList.Alignment = layout.Start
 	programState.rowList.Axis = layout.Vertical
@@ -222,7 +197,7 @@ func loop(w *app.Window) {
 
 func render(gtx *layout.Context, th *material.Theme) {
 	// click on tag header handler
-	for _, e := range gtx.Events(&programState.currentDBTag) {
+	for _, e := range gtx.Events(&programState.CurrentDBTag) {
 		if e, ok := e.(pointer.Event); ok {
 			if e.Type == pointer.Release {
 				programState.editingTagName = true
@@ -231,11 +206,11 @@ func render(gtx *layout.Context, th *material.Theme) {
 		}
 	}
 	// click on ref tag name handler
-	for _, t := range programState.sortedRefTagsKeys {
+	for _, t := range programState.SortedRefTagsKeys {
 		for _, e := range gtx.Events(t) {
 			if e, ok := e.(pointer.Event); ok {
 				if e.Type == pointer.Release {
-					switchTag(t)
+					programState.CurrentDBTag = t
 					programState.Refresh()
 				}
 			}
@@ -246,14 +221,14 @@ func render(gtx *layout.Context, th *material.Theme) {
 		switch e := e.(type) {
 		case widget.SubmitEvent:
 			if programState.tagNameEditor.Text() != "" {
-				tag, err := programState.db.RenameTag(programState.currentDBTag.Name, e.Text)
+				tag, err := programState.DB.RenameTag(programState.CurrentDBTag.Name, e.Text)
 				checkErr(err)
-				switchTag(tag)
+				programState.CurrentDBTag = tag
 				programState.Refresh()
 			}
 		case widget.KeyEvent:
 			if e.Key.Name == key.NameEscape {
-				programState.tagNameEditor.SetText(programState.currentDBTag.Name)
+				programState.tagNameEditor.SetText(programState.CurrentDBTag.Name)
 				programState.editingTagName = false
 			}
 		}
@@ -263,7 +238,7 @@ func render(gtx *layout.Context, th *material.Theme) {
 		switch e := e.(type) {
 		case widget.SubmitEvent:
 			if programState.newRowEditor.Text() != "" {
-				_, err := programState.db.AddRow(programState.currentDBTag.ID, e.Text, 0, 0)
+				_, err := programState.DB.AddRow(programState.CurrentDBTag.ID, e.Text, 0, 0)
 				checkErr(err)
 				programState.newRowEditor.SetText("")
 				programState.Refresh()
@@ -285,10 +260,10 @@ func render(gtx *layout.Context, th *material.Theme) {
 		switch e := e.(type) {
 		case widget.SubmitEvent:
 			if e.Text != "" {
-				tag, err := programState.db.AddTag(e.Text)
+				tag, err := programState.DB.AddTag(e.Text)
 				checkErr(err)
 				programState.tagFilterEditor.SetText("")
-				switchTag(tag)
+				programState.CurrentDBTag = tag
 				programState.Refresh()
 			}
 		case widget.KeyEvent:
@@ -356,10 +331,10 @@ func render(gtx *layout.Context, th *material.Theme) {
 							layout.Rigid(func() {
 								in.Layout(gtx, func() {
 									if programState.editingTagName == false {
-										th.H3(programState.currentDBTag.Name).Layout(gtx)
+										th.H3(programState.CurrentDBTag.Name).Layout(gtx)
 										// add edit tag handler
 										pointer.Rect(image.Rectangle{Max: gtx.Dimensions.Size}).Add(gtx.Ops)
-										pointer.InputOp{Key: &programState.currentDBTag}.Add(gtx.Ops)
+										pointer.InputOp{Key: &programState.CurrentDBTag}.Add(gtx.Ops)
 									} else {
 										editor := th.Editor("New tag name")
 										editor.TextSize = th.H3("").TextSize
@@ -388,10 +363,10 @@ func render(gtx *layout.Context, th *material.Theme) {
 					}),
 					// references pane
 					layout.Rigid(func() {
-						if len(programState.currentDBRefs) > 0 {
+						if len(programState.CurrentDBRefs) > 0 {
 							// count total refs for rowlist
 							refListLen := 0
-							for _, refs := range programState.currentDBRefs {
+							for _, refs := range programState.CurrentDBRefs {
 								refListLen++            // for the source tag header
 								refListLen += len(refs) // for the rows themselves
 							}
@@ -403,7 +378,7 @@ func render(gtx *layout.Context, th *material.Theme) {
 								}),
 								layout.Rigid(func() {
 									content := make([]interface{}, 0)
-									for _, tag := range programState.sortedRefTagsKeys {
+									for _, tag := range programState.SortedRefTagsKeys {
 										content = append(content, tag)
 										for i, _ := range programState.currentUIRefRows[tag] {
 											content = append(content, &programState.currentUIRefRows[tag][i])
@@ -438,19 +413,19 @@ func (r *uiRow) layout(gtx *layout.Context, th *material.Theme) {
 		switch e := e.(type) {
 		case widget.SubmitEvent:
 			if r.editor.Text() != "" {
-				err := programState.db.UpdateRowText(r.row.ID, e.Text)
+				err := programState.DB.UpdateRowText(r.row.ID, e.Text)
 				checkErr(err)
 			} else {
-				err := programState.db.DeleteRowByID(r.row.ID)
+				err := programState.DB.DeleteRowByID(r.row.ID)
 				checkErr(err)
 			}
 			r.editing = false
 			programState.DeleteTagIfEmpty(r.row.TagID)
-			if programState.currentDBTag.ID != r.row.TagID {
-				programState.DeleteTagIfEmpty(programState.currentDBTag.ID)
+			if programState.CurrentDBTag.ID != r.row.TagID {
+				programState.DeleteTagIfEmpty(programState.CurrentDBTag.ID)
 			}
 			// if current tag is gone, switch
-			if _, err := programState.db.GetTagByID(programState.currentDBTag.ID); err != nil {
+			if _, err := programState.DB.GetTagByID(programState.CurrentDBTag.ID); err != nil {
 				programState.GoToToday()
 			}
 			programState.Refresh()
@@ -509,7 +484,8 @@ func (r *uiRow) layout(gtx *layout.Context, th *material.Theme) {
 func (t *uiTagButton) layout(gtx *layout.Context, th *material.Theme) {
 	for t.button.Clicked(gtx) {
 		fmt.Println(t, "clicked")
-		switchTag(t.tag)
+		programState.CurrentDBTag = t.tag
+		programState.Refresh()
 	}
 
 	button := th.Button(t.tag.Name)
