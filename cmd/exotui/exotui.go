@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"os"
 	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -15,8 +16,10 @@ import (
 
 type state struct {
 	db.State
-	scanner      *bufio.Scanner
-	rowShortcuts map[string]db.Row
+	scanner         *bufio.Scanner
+	rowShortcuts    map[string]db.Row
+	tagShortcuts    map[db.Tag]int
+	tagShortcutsRev map[int]db.Tag
 }
 
 type incrementingKey struct {
@@ -56,6 +59,33 @@ func clearScreen() {
 	fmt.Printf("\033[H\033[2J")
 }
 
+func (s *state) Refresh() {
+	s.State.Refresh()
+
+	// init our tag shortcut map
+	s.tagShortcuts = make(map[db.Tag]int)
+	s.tagShortcutsRev = make(map[int]db.Tag)
+}
+
+func (s *state) GetShortcutForTag(tag db.Tag) int {
+	if i, ok := s.tagShortcuts[tag]; ok {
+		return i
+	}
+
+	maxI := 0
+	for _, i := range s.tagShortcuts {
+		if i > maxI {
+			maxI = i
+		}
+	}
+
+	key := maxI + 1
+	s.tagShortcuts[tag] = key
+	s.tagShortcutsRev[key] = tag
+
+	return key
+}
+
 func (s *state) GoToToday() {
 	t := time.Now()
 	tag, err := s.DB.AddTag(t.Format("January 02 2006"))
@@ -87,6 +117,9 @@ func (s *state) NewTag(arg string) {
 }
 
 func (s *state) RenderMain() {
+	var tag db.Tag
+	var err error
+
 	rowKey := NewIncrementingKey()
 
 	clearScreen()
@@ -96,7 +129,18 @@ func (s *state) RenderMain() {
 
 	for _, row := range s.CurrentDBRows {
 		s.rowShortcuts[rowKey.String()] = row
-		fmt.Printf(" %s: %s\n", rowKey, row.Text)
+		fmt.Printf(" %s: ", rowKey)
+		re := regexp.MustCompile(`\[\[(.*?)\]\]`)
+		for tagIndex := re.FindStringIndex(row.Text); tagIndex != nil; tagIndex = re.FindStringIndex(row.Text) {
+			// leading text
+			fmt.Printf("%s", row.Text[:tagIndex[0]])
+			// tag
+			tag, err = s.DB.GetTagByName(row.Text[tagIndex[0]+2 : tagIndex[1]-2])
+			checkErr(err)
+			fmt.Printf("%s(%d)", tag.Name, s.GetShortcutForTag(tag))
+			row.Text = row.Text[tagIndex[1]:]
+		}
+		fmt.Printf("%s\n", row.Text)
 		rowKey.increment()
 	}
 
@@ -106,7 +150,18 @@ func (s *state) RenderMain() {
 			fmt.Printf("\n %s\n", tag.Name)
 			for _, row := range s.CurrentDBRefs[tag] {
 				s.rowShortcuts[rowKey.String()] = row
-				fmt.Printf("  %s: %s\n", rowKey, row.Text)
+				fmt.Printf(" %s: ", rowKey)
+				re := regexp.MustCompile(`\[\[(.*?)\]\]`)
+				for tagIndex := re.FindStringIndex(row.Text); tagIndex != nil; tagIndex = re.FindStringIndex(row.Text) {
+					// leading text
+					fmt.Printf("%s", row.Text[:tagIndex[0]])
+					// tag
+					tag, err = s.DB.GetTagByName(row.Text[tagIndex[0]+2 : tagIndex[1]-2])
+					checkErr(err)
+					fmt.Printf("%s(%d)", tag.Name, s.GetShortcutForTag(tag))
+					row.Text = row.Text[tagIndex[1]:]
+				}
+				fmt.Printf("%s\n", row.Text)
 				rowKey.increment()
 			}
 		}
@@ -300,6 +355,16 @@ func main() {
 			programState.printHelp()
 		case 'q':
 			goto End
+		default:
+			// try to parse as int
+			i, err := strconv.Atoi(line)
+			if err != nil {
+				break
+			}
+			if tag, ok := programState.tagShortcutsRev[i]; ok {
+				programState.CurrentDBTag = tag
+				programState.Refresh()
+			}
 		}
 		programState.RenderMain()
 	}
