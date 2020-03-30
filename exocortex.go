@@ -66,18 +66,6 @@ func (p *state) FilterTags() {
 	}
 }
 
-func (p *state) DeleteTagIfEmpty(id int64) {
-	rows, err := p.DB.GetRowsForTagID(id)
-	checkErr(err)
-
-	refs, err := p.DB.GetRefsToTagByTagID(id)
-	checkErr(err)
-
-	if len(rows)+len(refs) == 0 {
-		p.DB.DeleteTagByID(id)
-	}
-}
-
 func (p *state) GoToToday() {
 	t := time.Now()
 	tag, err := programState.DB.AddTag(t.Format("January 02 2006"))

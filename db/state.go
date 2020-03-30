@@ -43,3 +43,26 @@ func (s *State) Refresh() error {
 End:
 	return err
 }
+
+func (s *State) DeleteTagIfEmpty(id int64) error {
+	var rows []Row
+	var refs Refs
+	var err error
+
+	rows, err = s.DB.GetRowsForTagID(id)
+	if err != nil {
+		goto End
+	}
+
+	refs, err = s.DB.GetRefsToTagByTagID(id)
+	if err != nil {
+		goto End
+	}
+
+	if len(rows)+len(refs) == 0 {
+		err = s.DB.DeleteTagByID(id)
+	}
+
+End:
+	return err
+}
