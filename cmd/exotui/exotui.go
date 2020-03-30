@@ -59,6 +59,9 @@ func clearScreen() {
 	fmt.Printf("\033[H\033[2J")
 }
 
+const ansiReverseVideo = "\033[7m"
+const ansiClearParams = "\033[0m"
+
 func (s *state) Refresh() {
 	s.State.Refresh()
 
@@ -137,7 +140,7 @@ func (s *state) RenderMain() {
 			// tag
 			tag, err = s.DB.GetTagByName(row.Text[tagIndex[0]+2 : tagIndex[1]-2])
 			checkErr(err)
-			fmt.Printf("%s(%d)", tag.Name, s.GetShortcutForTag(tag))
+			fmt.Printf("%s%s(%d)%s", ansiReverseVideo, tag.Name, s.GetShortcutForTag(tag), ansiClearParams)
 			row.Text = row.Text[tagIndex[1]:]
 		}
 		fmt.Printf("%s\n", row.Text)
@@ -147,7 +150,7 @@ func (s *state) RenderMain() {
 	if len(s.CurrentDBRefs) > 0 {
 		fmt.Println("\nReferences")
 		for _, tag := range s.SortedRefTagsKeys {
-			fmt.Printf("\n %s\n", tag.Name)
+			fmt.Printf("\n %s%s(%d)%s\n", ansiReverseVideo, tag.Name, s.GetShortcutForTag(tag), ansiClearParams)
 			for _, row := range s.CurrentDBRefs[tag] {
 				s.rowShortcuts[rowKey.String()] = row
 				fmt.Printf(" %s: ", rowKey)
@@ -158,7 +161,7 @@ func (s *state) RenderMain() {
 					// tag
 					tag, err = s.DB.GetTagByName(row.Text[tagIndex[0]+2 : tagIndex[1]-2])
 					checkErr(err)
-					fmt.Printf("%s(%d)", tag.Name, s.GetShortcutForTag(tag))
+					fmt.Printf("%s%s(%d)%s", ansiReverseVideo, tag.Name, s.GetShortcutForTag(tag), ansiClearParams)
 					row.Text = row.Text[tagIndex[1]:]
 				}
 				fmt.Printf("%s\n", row.Text)
@@ -297,6 +300,7 @@ func (s *state) EditRow(arg string) {
 func (s *state) printHelp() {
 	clearScreen()
 	fmt.Println("h: jump to today tag")
+	fmt.Println("[0-9]*: jump to shown numbered tag")
 	fmt.Println("a [text]: add new row with text [text] or fire up editor if [text] is not present")
 	fmt.Println("d <letter>: delete row designated by <letter>")
 	fmt.Println("e <letter>: edit row designated by <letter>")
