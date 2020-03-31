@@ -153,7 +153,7 @@ func (s *state) RenderMain() {
 			fmt.Printf("\n %s%s(%d)%s\n", ansiReverseVideo, tag.Name, s.GetShortcutForTag(tag), ansiClearParams)
 			for _, row := range s.CurrentDBRefs[tag] {
 				s.rowShortcuts[rowKey.String()] = row
-				fmt.Printf(" %s: ", rowKey)
+				fmt.Printf("  %s: ", rowKey)
 				re := regexp.MustCompile(`\[\[(.*?)\]\]`)
 				for tagIndex := re.FindStringIndex(row.Text); tagIndex != nil; tagIndex = re.FindStringIndex(row.Text) {
 					// leading text
@@ -199,23 +199,24 @@ func (s *state) RenameTag(arg string) {
 }
 
 func (s *state) SelectTagMenu() {
+	clearScreen()
 	fmt.Println("== Tags ==")
-	for i, v := range s.AllDBTags {
-		fmt.Printf(" %d: %s\n", i+1, v.Name)
+
+	keys := make(map[string]db.Tag)
+	key := NewIncrementingKey()
+	for _, v := range s.AllDBTags {
+		fmt.Printf(" %s: %s\n", key.String(), v.Name)
+		keys[key.String()] = v
+		key.increment()
 	}
 	fmt.Printf("\n[num or /search]: ")
 	s.scanner.Scan()
-	selection, err := strconv.Atoi(s.scanner.Text())
-	if err != nil {
-		return
-	}
+	selection := s.scanner.Text()
 
-	if selection > len(s.AllDBTags) || selection <= 0 {
-		return
+	if tag, ok := keys[selection]; ok {
+		s.CurrentDBTag = tag
+		s.Refresh()
 	}
-
-	s.CurrentDBTag = s.AllDBTags[selection-1]
-	s.Refresh()
 }
 
 func GetTextFromEditor(initialText []byte) ([]byte, bool) {
@@ -336,6 +337,7 @@ func main() {
 		line := scanner.Text()
 
 		if len(line) == 0 {
+			programState.Refresh()
 			programState.RenderMain()
 			continue
 		}
