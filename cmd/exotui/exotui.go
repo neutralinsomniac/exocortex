@@ -209,7 +209,7 @@ func (s *state) SelectTagMenu() {
 		keys[key.String()] = v
 		key.increment()
 	}
-	fmt.Printf("\n[num or /search]: ")
+	fmt.Printf("\n[letter or /search]: ")
 	s.scanner.Scan()
 	selection := s.scanner.Text()
 
