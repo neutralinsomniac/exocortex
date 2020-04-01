@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"io/ioutil"
+	"math"
 	"os"
 	"os/exec"
 	"regexp"
@@ -20,6 +21,7 @@ type state struct {
 	rowShortcuts    map[string]db.Row
 	tagShortcuts    map[db.Tag]int
 	tagShortcutsRev map[int]db.Tag
+	lastError       string
 }
 
 type incrementingKey struct {
@@ -47,6 +49,17 @@ func NewIncrementingKey() *incrementingKey {
 
 func (k *incrementingKey) String() string {
 	return k.key
+}
+
+// return the 0-indexed rank of the given key
+func keyToInt(key string) int {
+	num := 0
+	for i := len(key) - 1; i >= 0; i-- {
+		pow := math.Pow(26, float64(len(key)-1-i))
+		num += int(key[i]-'a'+1) * int(pow)
+	}
+
+	return num - 1
 }
 
 func checkErr(err error) {
@@ -170,6 +183,9 @@ func (s *state) RenderMain() {
 		}
 	}
 
+	if s.lastError != "" {
+		fmt.Printf("\n%s", s.lastError)
+	}
 	fmt.Printf("\n=> ")
 }
 
@@ -181,9 +197,11 @@ func (s *state) RenameTag(arg string) {
 	if len(arg) == 0 {
 		newTagName, ok := GetTextFromEditor([]byte(s.CurrentDBTag.Name))
 		if !ok {
+			s.lastError = "editor exited abnormally"
 			return
 		}
 		if len(newTagName) == 0 {
+			s.lastError = "empty input"
 			return
 		}
 
@@ -195,6 +213,7 @@ func (s *state) RenameTag(arg string) {
 	}
 
 	s.CurrentDBTag = tag
+	s.lastError = ""
 	s.Refresh()
 }
 
@@ -215,7 +234,10 @@ func (s *state) SelectTagMenu() {
 
 	if tag, ok := keys[selection]; ok {
 		s.CurrentDBTag = tag
+		s.lastError = ""
 		s.Refresh()
+	} else {
+		s.lastError = "invalid input"
 	}
 }
 
@@ -250,15 +272,21 @@ func (s *state) NewRow(arg string) {
 	if len(arg) == 0 {
 		newRowText, ok = GetTextFromEditor(nil)
 		if !ok {
+			s.lastError = "editor exited abnormally"
 			return
 		}
 		if len(newRowText) == 0 {
+			s.lastError = "empty input"
 			return
 		}
 	} else {
 		newRowText = []byte(arg)
 	}
-	s.DB.AddRow(s.CurrentDBTag.ID, string(newRowText), 0, 0)
+
+	_, err := s.DB.AddRow(s.CurrentDBTag.ID, string(newRowText), 0)
+	checkErr(err)
+
+	s.lastError = ""
 	s.Refresh()
 }
 
@@ -278,7 +306,10 @@ func (s *state) DeleteRow(arg string) {
 		if _, err := s.DB.GetTagByID(s.CurrentDBTag.ID); err != nil {
 			s.GoToToday()
 		}
+		s.lastError = ""
 		s.Refresh()
+	} else {
+		s.lastError = fmt.Sprintf("invalid row: %s", arg)
 	}
 }
 
@@ -287,13 +318,47 @@ func (s *state) EditRow(arg string) {
 	if row, ok := s.rowShortcuts[arg]; ok {
 		newRowText, ok := GetTextFromEditor([]byte(row.Text))
 		if !ok {
+			s.lastError = "editor exited abnormally"
 			return
 		}
 		if len(newRowText) == 0 {
+			s.lastError = "empty input"
 			return
 		}
+
 		err := s.DB.UpdateRowText(row.ID, string(newRowText))
 		checkErr(err)
+
+		s.lastError = ""
+		s.Refresh()
+	}
+}
+
+func (s *state) MoveRow(arg string) {
+	arg = strings.TrimSpace(arg)
+	// need exactly two args
+	args := strings.Fields(arg)
+	if len(args) != 2 {
+		s.lastError = "move <a> <b>"
+		return
+	}
+	if len(s.CurrentDBRows) == 0 {
+		s.lastError = "no rows"
+		return
+	}
+	if keyToInt(args[0]) > len(s.CurrentDBRows) {
+		s.lastError = fmt.Sprintf("%s out of range", args[0])
+		return
+	}
+	if keyToInt(args[1]) > len(s.CurrentDBRows) {
+		s.lastError = fmt.Sprintf("%s out of range", args[1])
+		return
+	}
+
+	if row, ok := s.rowShortcuts[args[0]]; ok {
+		err := s.DB.UpdateRowRank(row.ID, keyToInt(args[1]))
+		checkErr(err)
+		s.lastError = ""
 		s.Refresh()
 	}
 }
@@ -303,9 +368,10 @@ func (s *state) printHelp() {
 	fmt.Println("h: jump to today tag")
 	fmt.Println("[0-9]*: jump to shown numbered tag")
 	fmt.Println("a [text]: add new row with text [text] or fire up editor if [text] is not present")
-	fmt.Println("d <letter>: delete row designated by <letter>")
-	fmt.Println("e <letter>: edit row designated by <letter>")
+	fmt.Println("d <row>: delete row")
+	fmt.Println("e <row>: edit row")
 	fmt.Println("t: tag menu")
+	fmt.Println("m <row1> <row2>: move row1 to row2")
 	fmt.Println("n [text]: new tag with text <text>")
 	fmt.Println("r [text]: rename current tag with text <text>")
 	fmt.Println("?: print help")
@@ -337,6 +403,7 @@ func main() {
 		line := scanner.Text()
 
 		if len(line) == 0 {
+			programState.lastError = ""
 			programState.Refresh()
 			programState.RenderMain()
 			continue
@@ -351,6 +418,8 @@ func main() {
 			programState.DeleteRow(line[1:])
 		case 'e':
 			programState.EditRow(line[1:])
+		case 'm':
+			programState.MoveRow(line[1:])
 		case 'n':
 			programState.NewTag(line[1:])
 		case 't':
@@ -365,6 +434,7 @@ func main() {
 			// try to parse as int
 			i, err := strconv.Atoi(line)
 			if err != nil {
+				programState.lastError = "invalid input"
 				break
 			}
 			if tag, ok := programState.tagShortcutsRev[i]; ok {

@@ -69,7 +69,7 @@ func sqlGetRefsToTagByTagID(tx *sql.Tx, tagID int64) (Refs, error) {
 
 	refs = make(Refs)
 	for sqlRows.Next() {
-		err = sqlRows.Scan(&row.ID, &row.TagID, &row.ParentRowID, &row.Text, &row.rank, &row.UpdatedTS)
+		err = sqlRows.Scan(&row.ID, &row.TagID, &row.ParentRowID, &row.Text, &row.Rank, &row.UpdatedTS)
 		if err != nil {
 			goto End
 		}

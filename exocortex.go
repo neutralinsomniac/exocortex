@@ -226,7 +226,7 @@ func render(gtx *layout.Context, th *material.Theme) {
 		switch e := e.(type) {
 		case widget.SubmitEvent:
 			if programState.newRowEditor.Text() != "" {
-				_, err := programState.DB.AddRow(programState.CurrentDBTag.ID, e.Text, 0, 0)
+				_, err := programState.DB.AddRow(programState.CurrentDBTag.ID, e.Text, 0)
 				checkErr(err)
 				programState.newRowEditor.SetText("")
 				programState.Refresh()
