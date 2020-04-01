@@ -38,7 +38,7 @@ func (s *State) Refresh() error {
 		i++
 	}
 
-	sort.Slice(s.SortedRefTagsKeys, func(i, j int) bool { return s.SortedRefTagsKeys[i].Name < s.SortedRefTagsKeys[j].Name })
+	sort.Slice(s.SortedRefTagsKeys, func(i, j int) bool { return s.SortedRefTagsKeys[i].UpdatedTS > s.SortedRefTagsKeys[j].UpdatedTS })
 
 End:
 	return err
