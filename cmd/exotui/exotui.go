@@ -346,11 +346,11 @@ func (s *state) MoveRow(arg string) {
 		s.lastError = "no rows"
 		return
 	}
-	if keyToInt(args[0]) > len(s.CurrentDBRows) {
+	if keyToInt(args[0]) >= len(s.CurrentDBRows) {
 		s.lastError = fmt.Sprintf("%s out of range", args[0])
 		return
 	}
-	if keyToInt(args[1]) > len(s.CurrentDBRows) {
+	if keyToInt(args[1]) >= len(s.CurrentDBRows) {
 		s.lastError = fmt.Sprintf("%s out of range", args[1])
 		return
 	}
