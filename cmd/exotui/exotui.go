@@ -119,6 +119,11 @@ func (s *state) NewTag(arg string) {
 	if len(arg) == 0 {
 		newTagName, ok := GetTextFromEditor(nil)
 		if !ok {
+			s.lastError = "editor exited abnormally"
+			return
+		}
+		if len(newTagName) == 0 {
+			s.lastError = "empty input"
 			return
 		}
 		tag, err = s.DB.AddTag(string(newTagName))
@@ -129,6 +134,7 @@ func (s *state) NewTag(arg string) {
 	}
 
 	s.CurrentDBTag = tag
+	s.lastError = ""
 	s.Refresh()
 }
 
@@ -143,10 +149,11 @@ func (s *state) RenderMain() {
 
 	s.rowShortcuts = make(map[string]db.Row)
 
+	re := regexp.MustCompile(`\[\[(.*?)\]\]`)
+
 	for _, row := range s.CurrentDBRows {
 		s.rowShortcuts[rowKey.String()] = row
 		fmt.Printf(" %s: ", rowKey)
-		re := regexp.MustCompile(`\[\[(.*?)\]\]`)
 		for tagIndex := re.FindStringIndex(row.Text); tagIndex != nil; tagIndex = re.FindStringIndex(row.Text) {
 			// leading text
 			fmt.Printf("%s", row.Text[:tagIndex[0]])
@@ -167,7 +174,6 @@ func (s *state) RenderMain() {
 			for _, row := range s.CurrentDBRefs[tag] {
 				s.rowShortcuts[rowKey.String()] = row
 				fmt.Printf("  %s: ", rowKey)
-				re := regexp.MustCompile(`\[\[(.*?)\]\]`)
 				for tagIndex := re.FindStringIndex(row.Text); tagIndex != nil; tagIndex = re.FindStringIndex(row.Text) {
 					// leading text
 					fmt.Printf("%s", row.Text[:tagIndex[0]])
@@ -217,20 +223,84 @@ func (s *state) RenameTag(arg string) {
 	s.Refresh()
 }
 
-func (s *state) SelectTagMenu() {
+func (s *state) SelectTag(arg string) {
+	var search string
+	var filteredTags []db.Tag
+
 	clearScreen()
-	fmt.Println("== Tags ==")
+
+	arg = strings.TrimSpace(arg)
+
+	if len(arg) > 0 {
+		if arg[0] == '/' {
+			search = arg[1:]
+			if search == "" {
+				s.lastError = "empty search"
+				return
+			}
+		}
+	}
 
 	keys := make(map[string]db.Tag)
 	key := NewIncrementingKey()
-	for _, v := range s.AllDBTags {
+
+	// exact match attempt
+	if search == "" && len(arg) > 0 {
+		for _, v := range s.AllDBTags {
+			if v.Name == arg {
+				s.CurrentDBTag = v
+				s.Refresh()
+				s.lastError = ""
+				return
+			}
+		}
+		s.lastError = fmt.Sprintf("tag %s does not exist", arg)
+		return
+	}
+
+	// fuzzy match attempt
+	if len(search) > 0 {
+		filteredTags = make([]db.Tag, 0)
+		for _, v := range s.AllDBTags {
+			if strings.Contains(strings.ToLower(v.Name), strings.ToLower(search)) {
+				filteredTags = append(filteredTags, v)
+			}
+		}
+		switch len(filteredTags) {
+		case 0:
+			s.lastError = fmt.Sprintf("search for \"%s\" returned no tags", search)
+			return
+		case 1:
+			s.lastError = ""
+			s.CurrentDBTag = filteredTags[0]
+			s.Refresh()
+			return
+		default:
+			// move on to tag selection menu
+		}
+	} else {
+		// no args were passed; all tags
+		filteredTags = s.AllDBTags
+	}
+
+	if len(search) > 0 {
+		fmt.Printf("== Tags matching \"%s\" ==\n", search)
+	} else {
+		fmt.Println("== All Tags ==")
+	}
+	for _, v := range filteredTags {
 		fmt.Printf(" %s: %s\n", key.String(), v.Name)
 		keys[key.String()] = v
 		key.increment()
 	}
-	fmt.Printf("\n[letter or /search]: ")
+	fmt.Printf("\n[selection]: ")
 	s.scanner.Scan()
 	selection := s.scanner.Text()
+
+	if len(selection) == 0 {
+		s.lastError = ""
+		return
+	}
 
 	if tag, ok := keys[selection]; ok {
 		s.CurrentDBTag = tag
@@ -242,7 +312,7 @@ func (s *state) SelectTagMenu() {
 }
 
 func GetTextFromEditor(initialText []byte) ([]byte, bool) {
-	var newRowText []byte
+	var text []byte
 	var err error
 	var f *os.File
 
@@ -256,12 +326,12 @@ func GetTextFromEditor(initialText []byte) ([]byte, bool) {
 		if err != nil {
 			return nil, false
 		}
-		newRowText, err = ioutil.ReadFile(f.Name())
+		text, err = ioutil.ReadFile(f.Name())
 		os.Remove(f.Name())
 		// strip trailing/leading whitespace
-		newRowText = []byte(strings.TrimSpace(string(newRowText)))
+		text = []byte(strings.TrimSpace(string(text)))
 	}
-	return newRowText, true
+	return text, true
 }
 
 func (s *state) NewRow(arg string) {
@@ -371,6 +441,8 @@ func (s *state) printHelp() {
 	fmt.Println("d <row>: delete row")
 	fmt.Println("e <row>: edit row")
 	fmt.Println("t: tag menu")
+	fmt.Println("t/<text>: search tag names for <text>")
+	fmt.Println("t <text>: jump to exact tag <text>")
 	fmt.Println("m <row1> <row2>: move row1 to row2")
 	fmt.Println("n [text]: new tag with text <text>")
 	fmt.Println("r [text]: rename current tag with text <text>")
@@ -411,6 +483,7 @@ func main() {
 
 		switch line[0] {
 		case 'h':
+			programState.lastError = ""
 			programState.GoToToday()
 		case 'a':
 			programState.NewRow(line[1:])
@@ -423,7 +496,7 @@ func main() {
 		case 'n':
 			programState.NewTag(line[1:])
 		case 't':
-			programState.SelectTagMenu()
+			programState.SelectTag(line[1:])
 		case 'r':
 			programState.RenameTag(line[1:])
 		case '?':
