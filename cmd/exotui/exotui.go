@@ -21,6 +21,7 @@ type state struct {
 	rowShortcuts    map[string]db.Row
 	tagShortcuts    map[db.Tag]int
 	tagShortcutsRev map[int]db.Tag
+	snarfedRows     map[db.Row]bool
 	lastError       string
 }
 
@@ -28,7 +29,7 @@ type incrementingKey struct {
 	key string
 }
 
-func (c *incrementingKey) increment() {
+func (c *incrementingKey) Increment() {
 	for i := len(c.key) - 1; i >= 0; i-- {
 		if c.key[i] < 'z' {
 			c.key = c.key[:i] + string(c.key[i]+1) + string(c.key[i+1:])
@@ -41,9 +42,13 @@ func (c *incrementingKey) increment() {
 	c.key = "a" + c.key[:]
 }
 
-func NewIncrementingKey() *incrementingKey {
+func NewIncrementingKey(init string) *incrementingKey {
 	k := new(incrementingKey)
-	k.key = "a"
+	if init == "" {
+		k.key = "a"
+	} else {
+		k.key = init
+	}
 	return k
 }
 
@@ -148,7 +153,7 @@ func (s *state) RenderMain() {
 	var tag db.Tag
 	var err error
 
-	rowKey := NewIncrementingKey()
+	rowKey := NewIncrementingKey("")
 
 	clearScreen()
 	fmt.Printf("== %s ==\n", s.CurrentDBTag.Name)
@@ -170,7 +175,7 @@ func (s *state) RenderMain() {
 			row.Text = row.Text[tagIndex[1]:]
 		}
 		fmt.Printf("%s\n", row.Text)
-		rowKey.increment()
+		rowKey.Increment()
 	}
 
 	if len(s.CurrentDBRefs) > 0 {
@@ -190,7 +195,7 @@ func (s *state) RenderMain() {
 					row.Text = row.Text[tagIndex[1]:]
 				}
 				fmt.Printf("%s\n", row.Text)
-				rowKey.increment()
+				rowKey.Increment()
 			}
 		}
 	}
@@ -247,18 +252,16 @@ func (s *state) SelectTag(arg string) {
 	}
 
 	keys := make(map[string]db.Tag)
-	key := NewIncrementingKey()
+	key := NewIncrementingKey("")
 
-	// exact match attempt
+	// jump to tag
 	if search == "" && len(arg) > 0 {
-		for _, v := range s.AllDBTags {
-			if v.Name == arg {
-				s.lastError = ""
-				s.SwitchTag(v)
-				return
-			}
-		}
-		s.lastError = fmt.Sprintf("tag %s does not exist", arg)
+		tag, err := s.DB.AddTag(arg)
+		checkErr(err)
+
+		s.SwitchTag(tag)
+
+		s.lastError = ""
 		return
 	}
 
@@ -294,7 +297,7 @@ func (s *state) SelectTag(arg string) {
 	for _, v := range filteredTags {
 		fmt.Printf(" %s: %s\n", key.String(), v.Name)
 		keys[key.String()] = v
-		key.increment()
+		key.Increment()
 	}
 	fmt.Printf("\n[selection]: ")
 	s.scanner.Scan()
@@ -336,8 +339,9 @@ func GetTextFromEditor(initialText []byte) ([]byte, bool) {
 	return text, true
 }
 
-func (s *state) NewRow(arg string) {
+func (s *state) NewRow(arg string) (db.Row, bool) {
 	var newRowText []byte
+	var row db.Row
 	var ok bool
 
 	arg = strings.TrimSpace(arg)
@@ -345,34 +349,79 @@ func (s *state) NewRow(arg string) {
 		newRowText, ok = GetTextFromEditor(nil)
 		if !ok {
 			s.lastError = "editor exited abnormally"
-			return
+			return row, false
 		}
 		if len(newRowText) == 0 {
 			s.lastError = "empty input"
-			return
+			return row, false
 		}
 	} else {
 		newRowText = []byte(arg)
 	}
 
-	_, err := s.DB.AddRow(s.CurrentDBTag.ID, string(newRowText), 0)
+	row, err := s.DB.AddRow(s.CurrentDBTag.ID, string(newRowText), 0)
 	checkErr(err)
 
 	s.lastError = ""
 	s.Refresh()
+
+	return row, true
 }
 
-func (s *state) DeleteRow(arg string) {
+func (s *state) InsertRow(arg string) {
+	row, ok := s.NewRow(arg)
+	if !ok {
+		return
+	}
+
+	s.DB.UpdateRowRank(row.ID, 0)
+	s.Refresh()
+}
+
+func (s *state) DeleteRows(arg string) {
 	arg = strings.TrimSpace(arg)
-	if row, ok := s.rowShortcuts[arg]; ok {
+	if len(arg) == 0 {
+		s.lastError = "[d]elete <row|row-range>[,<row|row-range>,...]"
+		return
+	}
+
+	ok := s.CopyRows(arg)
+	if !ok {
+		// CopyRows will have set lastError
+		return
+	}
+
+	args := strings.Split(arg, ",")
+
+	rowsToDelete := make(map[db.Row]bool)
+	for _, r := range args {
+		if strings.Contains(r, "-") {
+			rows, ok := s.SelectRowRange(r)
+			if !ok {
+				// SelectRowRange() should have already set lastError
+				return
+			}
+			for _, row := range rows {
+				rowsToDelete[row] = true
+			}
+		} else {
+			rowShortcut := strings.TrimSpace(r)
+			if row, ok := s.rowShortcuts[rowShortcut]; ok {
+				rowsToDelete[row] = true
+			} else {
+				s.lastError = fmt.Sprintf("invalid row: %s", rowShortcut)
+				return
+			}
+		}
+	}
+
+	for row, _ := range rowsToDelete {
 		err := s.DB.DeleteRowByID(row.ID)
 		checkErr(err)
-
-		s.lastError = ""
-		s.Refresh()
-	} else {
-		s.lastError = fmt.Sprintf("invalid row: %s", arg)
 	}
+
+	s.lastError = fmt.Sprintf("cut %d rows", len(s.snarfedRows))
+	s.Refresh()
 }
 
 func (s *state) EditRow(arg string) {
@@ -398,9 +447,10 @@ func (s *state) EditRow(arg string) {
 
 func (s *state) MoveRow(arg string) {
 	arg = strings.TrimSpace(arg)
-	// need exactly two args
+
 	args := strings.Fields(arg)
-	if len(args) != 2 {
+	// if we don't have 2 distinct args, and our full string isn't exactly 2 chars (move ab)
+	if len(args) != 2 && len(arg) != 2 {
 		s.lastError = "move <a> <b>"
 		return
 	}
@@ -408,6 +458,12 @@ func (s *state) MoveRow(arg string) {
 		s.lastError = "no rows"
 		return
 	}
+	// handle the move ab case
+	if len(arg) == 2 {
+		args[0] = string(arg[0])
+		args = append(args, string(arg[1]))
+	}
+	// range check
 	if keyToInt(args[0]) >= len(s.CurrentDBRows) {
 		s.lastError = fmt.Sprintf("%s out of range", args[0])
 		return
@@ -425,20 +481,133 @@ func (s *state) MoveRow(arg string) {
 	}
 }
 
+func (s *state) SelectRowRange(arg string) ([]db.Row, bool) {
+	var selectedRows []db.Row
+
+	arg = strings.TrimSpace(arg)
+
+	rowRange := strings.Split(arg, "-")
+	if len(rowRange) != 2 {
+		s.lastError = "invalid range specified"
+		return nil, false
+	}
+
+	left := strings.TrimSpace(rowRange[0])
+	right := strings.TrimSpace(rowRange[1])
+
+	// make sure left and right exist in our rows
+	if _, ok := s.rowShortcuts[left]; !ok {
+		s.lastError = fmt.Sprintf("%s out of range", left)
+		return nil, false
+	}
+	if _, ok := s.rowShortcuts[right]; !ok {
+		s.lastError = fmt.Sprintf("%s out of range", right)
+		return nil, false
+	}
+	// if range is reversed, just flip it
+	if keyToInt(left) > keyToInt(right) {
+		tmp := left
+		left = right
+		right = tmp
+	}
+
+	// range is valid; we should be able to blindly copy now
+	for key := NewIncrementingKey(left); keyToInt(key.String()) <= keyToInt(right); key.Increment() {
+		selectedRows = append(selectedRows, s.rowShortcuts[key.String()])
+	}
+	return selectedRows, true
+}
+
+func (s *state) PasteRowsEnd() {
+	resnarf := make(map[db.Row]bool)
+
+	if len(s.snarfedRows) == 0 {
+		s.lastError = "empty snarf buffer"
+		return
+	}
+
+	for row, _ := range s.snarfedRows {
+		newRow, err := s.DB.AddRow(s.CurrentDBTag.ID, row.Text, 0)
+		checkErr(err)
+		resnarf[newRow] = true
+	}
+
+	// have to update our snarf buffer since these pasted rows are technically new
+	s.snarfedRows = resnarf
+
+	s.lastError = ""
+	s.Refresh()
+}
+
+func (s *state) PasteRowsStart() {
+	s.PasteRowsEnd()
+
+	for row, _ := range s.snarfedRows {
+		err := s.DB.UpdateRowRank(row.ID, 0)
+		checkErr(err)
+	}
+
+	s.Refresh()
+}
+
+func (s *state) CopyRows(arg string) bool {
+	arg = strings.TrimSpace(arg)
+	if len(arg) == 0 {
+		s.lastError = "[y]ank <row|row-range>[,<row|row-range>,...]"
+		return false
+	}
+
+	args := strings.Split(arg, ",")
+
+	rowsToCopy := make(map[db.Row]bool)
+	for _, r := range args {
+		if strings.Contains(r, "-") {
+			rows, ok := s.SelectRowRange(r)
+			if !ok {
+				// SelectRowRange() should have already set lastError
+				return false
+			}
+			for _, row := range rows {
+				rowsToCopy[row] = true
+			}
+		} else {
+			rowShortcut := strings.TrimSpace(r)
+			if row, ok := s.rowShortcuts[rowShortcut]; ok {
+				rowsToCopy[row] = true
+			} else {
+				s.lastError = fmt.Sprintf("invalid row: %s", rowShortcut)
+				return false
+			}
+		}
+	}
+
+	s.snarfedRows = rowsToCopy
+
+	s.lastError = fmt.Sprintf("snarfed %d rows", len(s.snarfedRows))
+	return true
+}
+
 func (s *state) printHelp() {
 	clearScreen()
+	fmt.Println("[Tags]")
 	fmt.Println("h: jump to today tag")
-	fmt.Println("[0-9]*: jump to shown numbered tag")
-	fmt.Println("a [text]: add new row with text [text] or fire up editor if [text] is not present")
-	fmt.Println("d <row>: delete row")
-	fmt.Println("e <row>: edit row")
 	fmt.Println("t: tag menu")
 	fmt.Println("t/<text>: search tag names for <text>")
-	fmt.Println("t <text>: jump to exact tag <text>")
-	fmt.Println("m <row1> <row2>: move row1 to row2")
-	fmt.Println("n [text]: new tag with text <text>")
+	fmt.Println("t <text>: jump to or create to exact tag <text>")
 	fmt.Println("r [text]: rename current tag with text <text>")
+	fmt.Println("[num]: jump to shown numbered tag")
+	fmt.Println("")
+	fmt.Println("[Rows]")
+	fmt.Println("a [text]: add new row with text [text] or fire up editor if [text] is not present")
+	fmt.Println("A [text]: add new row in first row slot with text [text] or fire up editor if [text] is not present")
+	fmt.Println("d <row|row-range>[,<row|row-range>,...]: cut row(s) to snarf buffer")
+	fmt.Println("e <row>: edit row")
+	fmt.Println("m <row1> <row2>: move row1 to row2")
+	fmt.Println("y <row|row-range>[,<row|row-range>,...]: yank row(s) to snarf buffer")
+	fmt.Println("p: paste snarfed rows at end of current tag")
+	fmt.Println("P: paste snarfed rows at beginning of current tag")
 	fmt.Println("?: print help")
+	fmt.Println("")
 	fmt.Println("press [enter] to continue...")
 
 	s.scanner.Scan()
@@ -479,8 +648,10 @@ func main() {
 			programState.GoToToday()
 		case 'a':
 			programState.NewRow(line[1:])
+		case 'A':
+			programState.InsertRow(line[1:])
 		case 'd':
-			programState.DeleteRow(line[1:])
+			programState.DeleteRows(line[1:])
 		case 'e':
 			programState.EditRow(line[1:])
 		case 'm':
@@ -489,8 +660,14 @@ func main() {
 			programState.NewTag(line[1:])
 		case 't':
 			programState.SelectTag(line[1:])
+		case 'p':
+			programState.PasteRowsEnd()
+		case 'P':
+			programState.PasteRowsStart()
 		case 'r':
 			programState.RenameTag(line[1:])
+		case 'y':
+			programState.CopyRows(line[1:])
 		case '?':
 			programState.printHelp()
 		case 'q':
