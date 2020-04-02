@@ -203,7 +203,9 @@ func (s *state) RenderMain() {
 	if s.lastError != "" {
 		fmt.Printf("\n%s", s.lastError)
 	}
-	fmt.Printf("\n=> ")
+
+	t := time.Now()
+	fmt.Printf("\n[%s] => ", t.Format("15:04:05"))
 }
 
 func (s *state) RenameTag(arg string) {
@@ -595,7 +597,7 @@ func (s *state) printHelp() {
 	fmt.Println("t/<text>: search tag names for <text>")
 	fmt.Println("t <text>: jump to or create to exact tag <text>")
 	fmt.Println("r [text]: rename current tag with text <text>")
-	fmt.Println("[num]: jump to shown numbered tag")
+	fmt.Println("[num]: jump to row-referenced tag")
 	fmt.Println("")
 	fmt.Println("[Rows]")
 	fmt.Println("a [text]: add new row with text [text] or fire up editor if [text] is not present")
@@ -604,8 +606,8 @@ func (s *state) printHelp() {
 	fmt.Println("e <row>: edit row")
 	fmt.Println("m <row1> <row2>: move row1 to row2")
 	fmt.Println("y <row|row-range>[,<row|row-range>,...]: yank row(s) to snarf buffer")
-	fmt.Println("p: paste snarfed rows at end of current tag")
-	fmt.Println("P: paste snarfed rows at beginning of current tag")
+	fmt.Println("p: paste snarfed rows to end of current tag")
+	fmt.Println("P: paste snarfed rows to beginning of current tag")
 	fmt.Println("?: print help")
 	fmt.Println("")
 	fmt.Println("press [enter] to continue...")
