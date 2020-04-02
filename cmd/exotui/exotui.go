@@ -83,6 +83,14 @@ func (s *state) Refresh() {
 	s.tagShortcutsRev = make(map[int]db.Tag)
 }
 
+func (s *state) SwitchTag(tag db.Tag) {
+	err := s.DeleteTagIfEmpty(s.CurrentDBTag.ID)
+	checkErr(err)
+
+	s.CurrentDBTag = tag
+	s.Refresh()
+}
+
 func (s *state) GetShortcutForTag(tag db.Tag) int {
 	if i, ok := s.tagShortcuts[tag]; ok {
 		return i
@@ -107,8 +115,7 @@ func (s *state) GoToToday() {
 	tag, err := s.DB.AddTag(t.Format("January 02 2006"))
 	checkErr(err)
 
-	s.CurrentDBTag = tag
-	s.Refresh()
+	s.SwitchTag(tag)
 }
 
 func (s *state) NewTag(arg string) {
@@ -133,9 +140,8 @@ func (s *state) NewTag(arg string) {
 		checkErr(err)
 	}
 
-	s.CurrentDBTag = tag
 	s.lastError = ""
-	s.Refresh()
+	s.SwitchTag(tag)
 }
 
 func (s *state) RenderMain() {
@@ -218,9 +224,8 @@ func (s *state) RenameTag(arg string) {
 		checkErr(err)
 	}
 
-	s.CurrentDBTag = tag
 	s.lastError = ""
-	s.Refresh()
+	s.SwitchTag(tag)
 }
 
 func (s *state) SelectTag(arg string) {
@@ -248,9 +253,8 @@ func (s *state) SelectTag(arg string) {
 	if search == "" && len(arg) > 0 {
 		for _, v := range s.AllDBTags {
 			if v.Name == arg {
-				s.CurrentDBTag = v
-				s.Refresh()
 				s.lastError = ""
+				s.SwitchTag(v)
 				return
 			}
 		}
@@ -272,8 +276,7 @@ func (s *state) SelectTag(arg string) {
 			return
 		case 1:
 			s.lastError = ""
-			s.CurrentDBTag = filteredTags[0]
-			s.Refresh()
+			s.SwitchTag(filteredTags[0])
 			return
 		default:
 			// move on to tag selection menu
@@ -303,9 +306,8 @@ func (s *state) SelectTag(arg string) {
 	}
 
 	if tag, ok := keys[selection]; ok {
-		s.CurrentDBTag = tag
 		s.lastError = ""
-		s.Refresh()
+		s.SwitchTag(tag)
 	} else {
 		s.lastError = "invalid input"
 	}
@@ -366,16 +368,6 @@ func (s *state) DeleteRow(arg string) {
 		err := s.DB.DeleteRowByID(row.ID)
 		checkErr(err)
 
-		err = s.DeleteTagIfEmpty(row.TagID)
-		checkErr(err)
-
-		err = s.DeleteTagIfEmpty(s.CurrentDBTag.ID)
-		checkErr(err)
-
-		// if current tag is gone, switch
-		if _, err := s.DB.GetTagByID(s.CurrentDBTag.ID); err != nil {
-			s.GoToToday()
-		}
 		s.lastError = ""
 		s.Refresh()
 	} else {
