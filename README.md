@@ -23,7 +23,7 @@ OR
 
 ## Usage
 
-Just run `exotui` or `exogio`.
+Just run the appropriate `exotui` or `exogio` binary for your platform.
 
 Currently, all persistent data is stored in a sqlite3 database called "exocortex.db" in the directory where exocortex is started from. This is intentional as it allows you to create different databases for different projects/contexts/whatever. I like to keep my main personal database in my home directory, and keep separate databases under the various project directories I'm working in.
 

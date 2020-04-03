@@ -832,5 +832,6 @@ func main() {
 		programState.RenderMain()
 	}
 End:
+	programState.DeleteTagIfEmpty(programState.CurrentDBTag.ID)
 	fmt.Println("bye!")
 }
