@@ -820,8 +820,10 @@ func main() {
 				break
 			}
 			if tag, ok := programState.tagShortcutsRev[i]; ok {
-				programState.CurrentDBTag = tag
-				programState.Refresh()
+				programState.lastError = ""
+				programState.SwitchTag(tag)
+			} else {
+				programState.lastError = "no such tag ref"
 			}
 		}
 		programState.RenderMain()
