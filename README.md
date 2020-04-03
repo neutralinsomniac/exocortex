@@ -1,6 +1,6 @@
 # exocortex
 
-A note-taking/information storage system written in Golang.
+A note-taking/information storage system/todo list/whatever-you-want-it-to-be written in Golang.
 
 ## Concepts
 
