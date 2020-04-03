@@ -766,6 +766,7 @@ func main() {
 
 	scanner := bufio.NewScanner(os.Stdin)
 	programState.scanner = scanner
+	programState.lastError = "enter '?' for help"
 	programState.RenderMain()
 
 	for scanner.Scan() {
