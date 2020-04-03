@@ -117,6 +117,10 @@ func (s *state) GetShortcutForTag(tag db.Tag) int {
 
 func (s *state) GoToToday() {
 	t := time.Now()
+	s.GoToDate(t)
+}
+
+func (s *state) GoToDate(t time.Time) {
 	tag, err := s.DB.AddTag(t.Format("January 02 2006"))
 	checkErr(err)
 
@@ -339,6 +343,100 @@ func GetTextFromEditor(initialText []byte) ([]byte, bool) {
 		text = []byte(strings.TrimSpace(string(text)))
 	}
 	return text, true
+}
+
+func printMonthCalendar(t time.Time) {
+	today := time.Now()
+	year, month, _ := t.Date()
+
+	clearScreen()
+	fmt.Printf("  == %s %d ==\n", month.String()[:3], year)
+
+	fmt.Println("S  M  T  W  H  F  S")
+	// first, walk the days of the week until we find the start day
+	// this aligns us with the proper day of the week before we start
+	// printing
+	startOfMonth := time.Date(year, month, 1, 0, 0, 0, 0, t.Location())
+	for weekdayIter := time.Weekday(0); weekdayIter != startOfMonth.Weekday(); weekdayIter++ {
+		fmt.Printf("   ")
+	}
+	// now we've printed enough space, so we can start blindly walking our days
+	var d time.Time
+	for d = startOfMonth; d.Month() == t.Month(); d = d.AddDate(0, 0, 1) {
+		isToday := false
+		if d.Day() == today.Day() && d.Month() == today.Month() && d.Year() == today.Year() {
+			isToday = true
+		}
+		if isToday {
+			fmt.Printf(ansiReverseVideo)
+		}
+		dayStr := d.Format("2")
+		fmt.Printf("%s", dayStr)
+		if isToday {
+			fmt.Printf(ansiClearParams)
+		}
+		// and manually pad out
+		// can't use format strings because the padding gets included in the video reverse effect
+		for i := 0; i < 3-len(dayStr); i++ {
+			fmt.Printf(" ")
+		}
+		if d.Weekday() == time.Saturday {
+			fmt.Println("")
+		}
+	}
+	// print a newline only if we haven't already
+	if d.Weekday() != time.Sunday {
+		fmt.Println("")
+	}
+}
+
+func (s *state) PickDateInteractive() {
+	currentDate := time.Now()
+
+	printMonthCalendar(currentDate)
+	fmt.Println("\nenter '?' for help")
+	fmt.Printf("\n=> ")
+
+	for s.scanner.Scan() {
+		line := s.scanner.Text()
+		if len(line) == 0 {
+			return
+		}
+		switch line[:1] {
+		case "?":
+			clearScreen()
+			fmt.Println("[day]: switch to tag corresponding to [day]")
+			fmt.Println("t: jump to today's month")
+			fmt.Println("<: move backwards one month")
+			fmt.Println(">: move forwards one month")
+			fmt.Println("q or [enter]: exit")
+			fmt.Println("")
+			fmt.Println("press [enter] to continue...")
+			s.scanner.Scan()
+		case "<":
+			currentDate = currentDate.AddDate(0, -1, 0)
+		case ">":
+			currentDate = currentDate.AddDate(0, 1, 0)
+		case "t":
+			currentDate = time.Now()
+		case "q":
+			return
+		default:
+			// try to parse as day
+			i, err := strconv.Atoi(line)
+			if err != nil {
+				s.lastError = "invalid input"
+				return
+			}
+			currentDate = time.Date(currentDate.Year(), currentDate.Month(), i, 0, 0, 0, 0, currentDate.Location())
+
+			s.GoToDate(currentDate)
+			return
+		}
+
+		printMonthCalendar(currentDate)
+		fmt.Printf("\n=> ")
+	}
 }
 
 func (s *state) NewRow(arg string) (db.Row, bool) {
@@ -592,22 +690,23 @@ func (s *state) CopyRows(arg string) bool {
 func (s *state) printHelp() {
 	clearScreen()
 	fmt.Println("[Tags]")
-	fmt.Println("h: jump to today tag")
-	fmt.Println("t: tag menu")
+	fmt.Println("h: jump to today tag ('h'ome)")
+	fmt.Println("t: open all tags menu ('t'ags)")
+	fmt.Println("g: open date picker ('g'oto)")
 	fmt.Println("t/<text>: search tag names for <text>")
 	fmt.Println("t <text>: jump to or create to exact tag <text>")
-	fmt.Println("r [text]: rename current tag with text <text>")
-	fmt.Println("[num]: jump to row-referenced tag")
+	fmt.Println("r [text]: rename current tag with text <text> ('r'ename)")
 	fmt.Println("")
 	fmt.Println("[Rows]")
-	fmt.Println("a [text]: add new row with text [text] or fire up editor if [text] is not present")
-	fmt.Println("A [text]: add new row in first row slot with text [text] or fire up editor if [text] is not present")
-	fmt.Println("d <row|row-range>[,<row|row-range>,...]: cut row(s) to snarf buffer")
-	fmt.Println("e <row>: edit row")
-	fmt.Println("m <row1> <row2>: move row1 to row2")
-	fmt.Println("y <row|row-range>[,<row|row-range>,...]: yank row(s) to snarf buffer")
-	fmt.Println("p: paste snarfed rows to end of current tag")
-	fmt.Println("P: paste snarfed rows to beginning of current tag")
+	fmt.Println("[num]: jump to row-referenced tag")
+	fmt.Println("a [text]: add new row with text [text] or fire up editor if [text] is not present ('a'dd)")
+	fmt.Println("A [text]: add new row in first row slot with text [text] or fire up editor if [text] is not present ('A'dd)")
+	fmt.Println("d <row|row-range>[,<row|row-range>,...]: cut row(s) to snarf buffer ('d'elete)")
+	fmt.Println("e <row>: edit row ('e'dit)")
+	fmt.Println("m <row1> <row2>: move row1 to row2 ('m'ove)")
+	fmt.Println("y <row|row-range>[,<row|row-range>,...]: yank row(s) to snarf buffer ('y'ank)")
+	fmt.Println("p: paste snarfed rows to end of current tag ('p'aste)")
+	fmt.Println("P: paste snarfed rows to beginning of current tag ('P'aste)")
 	fmt.Println("?: print help")
 	fmt.Println("")
 	fmt.Println("press [enter] to continue...")
@@ -656,6 +755,8 @@ func main() {
 			programState.DeleteRows(line[1:])
 		case 'e':
 			programState.EditRow(line[1:])
+		case 'g':
+			programState.PickDateInteractive()
 		case 'm':
 			programState.MoveRow(line[1:])
 		case 'n':
