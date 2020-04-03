@@ -406,7 +406,13 @@ func (s *state) printMonthCalendar(t time.Time) {
 }
 
 func (s *state) PickDateInteractive() {
-	currentDate := time.Now()
+	var currentDate time.Time
+	curTagDate, err := time.Parse("January 02 2006", s.CurrentDBTag.Name)
+	if err != nil {
+		currentDate = time.Now()
+	} else {
+		currentDate = curTagDate
+	}
 
 	s.printMonthCalendar(currentDate)
 	fmt.Println("\nenter '?' for help")
