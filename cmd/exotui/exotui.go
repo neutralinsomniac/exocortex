@@ -98,8 +98,10 @@ func (s *state) Refresh() {
 }
 
 func (s *state) SwitchTag(tag db.Tag) {
-	err := s.DeleteTagIfEmpty(s.CurrentDBTag.ID)
-	checkErr(err)
+	if tag != s.CurrentDBTag {
+		err := s.DeleteTagIfEmpty(s.CurrentDBTag.ID)
+		checkErr(err)
+	}
 
 	s.CurrentDBTag = tag
 	s.Refresh()
