@@ -423,6 +423,7 @@ func (s *state) PickDateInteractive() {
 	for s.scanner.Scan() {
 		line := s.scanner.Text()
 		if len(line) == 0 {
+			s.lastError = ""
 			return
 		}
 		switch line[:1] {
@@ -443,6 +444,7 @@ func (s *state) PickDateInteractive() {
 		case "h":
 			currentDate = time.Now()
 		case "q":
+			s.lastError = ""
 			return
 		default:
 			// try to parse as day
@@ -454,6 +456,7 @@ func (s *state) PickDateInteractive() {
 			currentDate = time.Date(currentDate.Year(), currentDate.Month(), i, 0, 0, 0, 0, currentDate.Location())
 
 			s.GoToDate(currentDate)
+			s.lastError = ""
 			return
 		}
 
