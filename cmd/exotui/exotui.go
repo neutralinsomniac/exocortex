@@ -429,7 +429,7 @@ func (s *state) PickDateInteractive() {
 		case "?":
 			clearScreen()
 			fmt.Println("[day]: switch to tag corresponding to [day]")
-			fmt.Println("t: jump to today's month")
+			fmt.Println("h: jump to today's month")
 			fmt.Println("<: move backwards one month")
 			fmt.Println(">: move forwards one month")
 			fmt.Println("q or [enter]: exit")
@@ -440,7 +440,7 @@ func (s *state) PickDateInteractive() {
 			currentDate = currentDate.AddDate(0, -1, 0)
 		case ">":
 			currentDate = currentDate.AddDate(0, 1, 0)
-		case "t":
+		case "h":
 			currentDate = time.Now()
 		case "q":
 			return
