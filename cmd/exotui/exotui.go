@@ -822,7 +822,7 @@ func main() {
 			// try to parse as int
 			i, err := strconv.Atoi(line)
 			if err != nil {
-				programState.lastError = "invalid input"
+				programState.lastError = fmt.Sprintf("invalid command: %c", line[0])
 				break
 			}
 			if tag, ok := programState.tagShortcutsRev[i]; ok {
