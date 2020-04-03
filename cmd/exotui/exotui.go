@@ -22,6 +22,7 @@ type state struct {
 	tagShortcuts    map[db.Tag]int
 	tagShortcutsRev map[int]db.Tag
 	snarfedRows     map[db.Row]bool
+	allTagNames     map[string]bool
 	lastError       string
 }
 
@@ -78,6 +79,7 @@ func clearScreen() {
 }
 
 const ansiReverseVideo = "\033[7m"
+const ansiBoldText = "\033[1m"
 const ansiClearParams = "\033[0m"
 
 func (s *state) Refresh() {
@@ -86,6 +88,13 @@ func (s *state) Refresh() {
 	// init our tag shortcut map
 	s.tagShortcuts = make(map[db.Tag]int)
 	s.tagShortcutsRev = make(map[int]db.Tag)
+
+	// cache tag names for calendar
+	s.allTagNames = make(map[string]bool)
+	for _, tag := range s.AllDBTags {
+		s.allTagNames[tag.Name] = true
+	}
+
 }
 
 func (s *state) SwitchTag(tag db.Tag) {
@@ -345,7 +354,7 @@ func GetTextFromEditor(initialText []byte) ([]byte, bool) {
 	return text, true
 }
 
-func printMonthCalendar(t time.Time) {
+func (s *state) printMonthCalendar(t time.Time) {
 	today := time.Now()
 	year, month, _ := t.Date()
 
@@ -363,16 +372,22 @@ func printMonthCalendar(t time.Time) {
 	// now we've printed enough space, so we can start blindly walking our days
 	var d time.Time
 	for d = startOfMonth; d.Month() == t.Month(); d = d.AddDate(0, 0, 1) {
-		isToday := false
+		var isToday, tagExists bool
 		if d.Day() == today.Day() && d.Month() == today.Month() && d.Year() == today.Year() {
 			isToday = true
 		}
+		tagStr := d.Format("January 02 2006")
+		if _, ok := s.allTagNames[tagStr]; ok {
+			tagExists = true
+		}
 		if isToday {
 			fmt.Printf(ansiReverseVideo)
+		} else if tagExists {
+			fmt.Printf(ansiBoldText)
 		}
 		dayStr := d.Format("2")
 		fmt.Printf("%s", dayStr)
-		if isToday {
+		if isToday || tagExists {
 			fmt.Printf(ansiClearParams)
 		}
 		// and manually pad out
@@ -393,7 +408,7 @@ func printMonthCalendar(t time.Time) {
 func (s *state) PickDateInteractive() {
 	currentDate := time.Now()
 
-	printMonthCalendar(currentDate)
+	s.printMonthCalendar(currentDate)
 	fmt.Println("\nenter '?' for help")
 	fmt.Printf("\n=> ")
 
@@ -434,7 +449,7 @@ func (s *state) PickDateInteractive() {
 			return
 		}
 
-		printMonthCalendar(currentDate)
+		s.printMonthCalendar(currentDate)
 		fmt.Printf("\n=> ")
 	}
 }
