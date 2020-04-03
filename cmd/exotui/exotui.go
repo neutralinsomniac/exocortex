@@ -439,6 +439,16 @@ func (s *state) PickDateInteractive() {
 	}
 }
 
+func (s *state) MoveDays(num int) {
+	curDate, err := time.Parse("January 02 2006", s.CurrentDBTag.Name)
+	if err != nil {
+		s.lastError = "not currently on date tag"
+		return
+	}
+
+	s.GoToDate(curDate.AddDate(0, 0, num))
+}
+
 func (s *state) NewRow(arg string) (db.Row, bool) {
 	var newRowText []byte
 	var row db.Row
@@ -693,6 +703,8 @@ func (s *state) printHelp() {
 	fmt.Println("h: jump to today tag ('h'ome)")
 	fmt.Println("t: open all tags menu ('t'ags)")
 	fmt.Println("g: open date picker ('g'oto)")
+	fmt.Println("<: go back one day (left)")
+	fmt.Println(">: go forward one day (right)")
 	fmt.Println("t/<text>: search tag names for <text>")
 	fmt.Println("t <text>: jump to or create to exact tag <text>")
 	fmt.Println("r [text]: rename current tag with text <text> ('r'ename)")
@@ -771,6 +783,10 @@ func main() {
 			programState.RenameTag(line[1:])
 		case 'y':
 			programState.CopyRows(line[1:])
+		case '<':
+			programState.MoveDays(-1)
+		case '>':
+			programState.MoveDays(1)
 		case '?':
 			programState.printHelp()
 		case 'q':
