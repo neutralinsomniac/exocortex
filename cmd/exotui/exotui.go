@@ -27,34 +27,34 @@ type state struct {
 }
 
 type incrementingKey struct {
-	key string
+	key []byte
 }
 
 func (c *incrementingKey) Increment() {
 	for i := len(c.key) - 1; i >= 0; i-- {
 		if c.key[i] < 'z' {
-			c.key = fmt.Sprintf("%s%c%s", c.key[:i], c.key[i]+1, c.key[i+1:])
+			c.key[i]++
 			return
 		}
 		// key at cur position is 'z'; reset to 'a'
-		c.key = fmt.Sprintf("%sa%s", c.key[:i], string(c.key[i+1:]))
+		c.key[i] = 'a'
 	}
 	// we're at the end of the line; add a new power
-	c.key = fmt.Sprintf("a%s", c.key[:])
+	c.key = append([]byte{'a'}, c.key...)
 }
 
 func NewIncrementingKey(init string) *incrementingKey {
 	k := new(incrementingKey)
 	if init == "" {
-		k.key = "a"
+		k.key = []byte{'a'}
 	} else {
-		k.key = init
+		k.key = []byte(init)
 	}
 	return k
 }
 
 func (k *incrementingKey) String() string {
-	return k.key
+	return string(k.key)
 }
 
 // return the 0-indexed rank of the given key
