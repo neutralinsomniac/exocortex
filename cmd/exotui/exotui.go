@@ -335,10 +335,9 @@ func (s *state) SelectTag(arg string) {
 
 func GetTextFromEditor(initialText []byte) ([]byte, bool) {
 	var text []byte
-	var err error
-	var f *os.File
 
-	if f, err = ioutil.TempFile("", "exo"); err == nil {
+	if f, err := ioutil.TempFile("", "exo"); err == nil {
+		defer os.Remove(f.Name())
 		f.Write(initialText)
 		cmd := exec.Command("vi", f.Name())
 		cmd.Stdin = os.Stdin
@@ -349,7 +348,6 @@ func GetTextFromEditor(initialText []byte) ([]byte, bool) {
 			return nil, false
 		}
 		text, err = ioutil.ReadFile(f.Name())
-		os.Remove(f.Name())
 		// strip trailing/leading whitespace
 		text = []byte(strings.TrimSpace(string(text)))
 	}
