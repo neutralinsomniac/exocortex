@@ -435,7 +435,7 @@ func (s *state) printMonthCalendar(t time.Time) {
 	}
 }
 
-func (s *state) PickDateInteractive() {
+func (s *state) StartCalendar() {
 	var currentDate time.Time
 	curTagDate, err := time.Parse("January 02 2006", s.CurrentDBTag.Name)
 	if err != nil {
@@ -762,7 +762,7 @@ func (s *state) printHelp() {
 	fmt.Println("t/<text>: search tag names for <text>")
 	fmt.Println("t <text>: jump to or create to exact tag <text>")
 	fmt.Println("r [text]: rename current tag with text <text> ('r'ename)")
-	fmt.Println("g: open date picker ('g'oto)")
+	fmt.Println("c: open calendar ('c'alendar)")
 	fmt.Println("<: go back one day (left)")
 	fmt.Println(">: go forward one day (right)")
 	fmt.Println("b: jump backwards in tag stack ('b'ack)")
@@ -828,8 +828,8 @@ func main() {
 			programState.DeleteRows(line[1:])
 		case 'e':
 			programState.EditRow(line[1:])
-		case 'g':
-			programState.PickDateInteractive()
+		case 'c':
+			programState.StartCalendar()
 		case 'm':
 			programState.MoveRow(line[1:])
 		case 'n':
