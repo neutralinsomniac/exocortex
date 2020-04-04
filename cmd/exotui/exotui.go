@@ -414,6 +414,9 @@ func (s *state) PickDateInteractive() {
 		currentDate = curTagDate
 	}
 
+	// normalize the date so month calculations work
+	currentDate = time.Date(currentDate.Year(), currentDate.Month(), 1, 0, 0, 0, 0, currentDate.Location())
+
 	s.printMonthCalendar(currentDate)
 	fmt.Println("\nenter '?' for help")
 	fmt.Printf("\n=> ")
