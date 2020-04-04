@@ -33,14 +33,14 @@ type incrementingKey struct {
 func (c *incrementingKey) Increment() {
 	for i := len(c.key) - 1; i >= 0; i-- {
 		if c.key[i] < 'z' {
-			c.key = c.key[:i] + string(c.key[i]+1) + string(c.key[i+1:])
+			c.key = fmt.Sprintf("%s%c%s", c.key[:i], c.key[i]+1, c.key[i+1:])
 			return
 		}
 		// key at cur position is 'z'; reset to 'a'
-		c.key = c.key[:i] + "a" + string(c.key[i+1:])
+		c.key = fmt.Sprintf("%sa%s", c.key[:i], string(c.key[i+1:]))
 	}
 	// we're at the end of the line; add a new power
-	c.key = "a" + c.key[:]
+	c.key = fmt.Sprintf("a%s", c.key[:])
 }
 
 func NewIncrementingKey(init string) *incrementingKey {

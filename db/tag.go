@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"fmt"
 	"strings"
 	"time"
 
@@ -293,7 +294,9 @@ func (e *ExoDB) RenameTag(oldname string, newname string) (Tag, error) {
 
 	for _, rows := range refs {
 		for _, row := range rows {
-			err = sqlUpdateRowText(tx, row.ID, strings.ReplaceAll(row.Text, "[["+oldname+"]]", "[["+newname+"]]"))
+			oldtag := fmt.Sprintf("[[%s]]", oldname)
+			newtag := fmt.Sprintf("[[%s]]", newname)
+			err = sqlUpdateRowText(tx, row.ID, strings.ReplaceAll(row.Text, oldtag, newtag))
 			if err != nil {
 				goto End
 			}
