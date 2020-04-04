@@ -135,6 +135,7 @@ func (s *state) GoToDate(t time.Time) {
 	tag, err := s.DB.AddTag(t.Format("January 02 2006"))
 	checkErr(err)
 
+	s.lastError = ""
 	s.SwitchTag(tag)
 }
 
