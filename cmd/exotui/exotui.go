@@ -821,7 +821,7 @@ func main() {
 				programState.lastError = ""
 				programState.SwitchTag(tag)
 			} else {
-				programState.lastError = "no such tag ref"
+				programState.lastError = fmt.Sprintf("no such tag ref: %d", i)
 			}
 		}
 		programState.RenderMain()
