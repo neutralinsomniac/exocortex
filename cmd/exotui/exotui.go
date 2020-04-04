@@ -811,17 +811,23 @@ func main() {
 		case 'q':
 			goto End
 		default:
-			// try to parse as int
-			i, err := strconv.Atoi(line)
-			if err != nil {
-				programState.lastError = fmt.Sprintf("invalid command: %c", line[0])
-				break
-			}
-			if tag, ok := programState.tagShortcutsRev[i]; ok {
-				programState.lastError = ""
-				programState.SwitchTag(tag)
+			if line[0] <= '9' && line[0] >= '0' {
+				// try to parse as int
+				i, err := strconv.Atoi(line)
+				if err != nil {
+					programState.lastError = fmt.Sprintf("failed to parse tag ref: %s", line)
+					break
+				}
+				// looks like an int; do a lookup
+				if tag, ok := programState.tagShortcutsRev[i]; ok {
+					programState.lastError = ""
+					programState.SwitchTag(tag)
+				} else {
+					programState.lastError = fmt.Sprintf("no such tag ref: %d", i)
+				}
 			} else {
-				programState.lastError = fmt.Sprintf("no such tag ref: %d", i)
+				// some random non-numeric command was entered
+				programState.lastError = fmt.Sprintf("invalid command: %c", line[0])
 			}
 		}
 		programState.RenderMain()
