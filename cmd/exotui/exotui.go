@@ -21,7 +21,7 @@ type state struct {
 	rowShortcuts    map[string]db.Row
 	tagShortcuts    map[db.Tag]int
 	tagShortcutsRev map[int]db.Tag
-	snarfedRows     map[db.Row]bool
+	snarfedRows     []db.Row
 	allTagNames     map[string]bool
 	lastError       string
 }
@@ -527,31 +527,7 @@ func (s *state) DeleteRows(arg string) {
 		return
 	}
 
-	args := strings.Split(arg, ",")
-
-	rowsToDelete := make(map[db.Row]bool)
-	for _, r := range args {
-		if strings.Contains(r, "-") {
-			rows, ok := s.SelectRowRange(r)
-			if !ok {
-				// SelectRowRange() should have already set lastError
-				return
-			}
-			for _, row := range rows {
-				rowsToDelete[row] = true
-			}
-		} else {
-			rowShortcut := strings.TrimSpace(r)
-			if row, ok := s.rowShortcuts[rowShortcut]; ok {
-				rowsToDelete[row] = true
-			} else {
-				s.lastError = fmt.Sprintf("invalid row: %s", rowShortcut)
-				return
-			}
-		}
-	}
-
-	for row, _ := range rowsToDelete {
+	for _, row := range s.snarfedRows {
 		err := s.DB.DeleteRowByID(row.ID)
 		checkErr(err)
 	}
@@ -641,31 +617,38 @@ func (s *state) SelectRowRange(arg string) ([]db.Row, bool) {
 		return nil, false
 	}
 	// if range is reversed, just flip it
-	if keyToInt(left) > keyToInt(right) {
-		tmp := left
-		left = right
-		right = tmp
+	rangeReversed := false
+	if left > right {
+		left, right = right, left
+		rangeReversed = true
 	}
 
 	// range is valid; we should be able to blindly copy now
 	for key := NewIncrementingKey(left); keyToInt(key.String()) <= keyToInt(right); key.Increment() {
 		selectedRows = append(selectedRows, s.rowShortcuts[key.String()])
 	}
+	if rangeReversed {
+		// put your thang down flip it and reverse it
+		for i := 0; i < len(selectedRows)/2; i++ {
+			// flip it
+			selectedRows[i], selectedRows[len(selectedRows)-1-i] = selectedRows[len(selectedRows)-1-i], selectedRows[i]
+		}
+	}
 	return selectedRows, true
 }
 
 func (s *state) PasteRowsEnd() {
-	resnarf := make(map[db.Row]bool)
+	resnarf := make([]db.Row, 0, len(s.snarfedRows))
 
 	if len(s.snarfedRows) == 0 {
 		s.lastError = "empty snarf buffer"
 		return
 	}
 
-	for row, _ := range s.snarfedRows {
+	for _, row := range s.snarfedRows {
 		newRow, err := s.DB.AddRow(s.CurrentDBTag.ID, row.Text, 0)
 		checkErr(err)
-		resnarf[newRow] = true
+		resnarf = append(resnarf, newRow)
 	}
 
 	// have to update our snarf buffer since these pasted rows are technically new
@@ -678,8 +661,8 @@ func (s *state) PasteRowsEnd() {
 func (s *state) PasteRowsStart() {
 	s.PasteRowsEnd()
 
-	for row, _ := range s.snarfedRows {
-		err := s.DB.UpdateRowRank(row.ID, 0)
+	for i := len(s.snarfedRows) - 1; i >= 0; i-- {
+		err := s.DB.UpdateRowRank(s.snarfedRows[i].ID, 0)
 		checkErr(err)
 	}
 
@@ -695,7 +678,8 @@ func (s *state) CopyRows(arg string) bool {
 
 	args := strings.Split(arg, ",")
 
-	rowsToCopy := make(map[db.Row]bool)
+	alreadySnarfedRows := make(map[db.Row]bool)
+	snarfedRows := make([]db.Row, 0)
 	for _, r := range args {
 		if strings.Contains(r, "-") {
 			rows, ok := s.SelectRowRange(r)
@@ -704,12 +688,18 @@ func (s *state) CopyRows(arg string) bool {
 				return false
 			}
 			for _, row := range rows {
-				rowsToCopy[row] = true
+				if !alreadySnarfedRows[row] {
+					snarfedRows = append(snarfedRows, row)
+					alreadySnarfedRows[row] = true
+				}
 			}
 		} else {
 			rowShortcut := strings.TrimSpace(r)
 			if row, ok := s.rowShortcuts[rowShortcut]; ok {
-				rowsToCopy[row] = true
+				if !alreadySnarfedRows[row] {
+					snarfedRows = append(snarfedRows, row)
+					alreadySnarfedRows[row] = true
+				}
 			} else {
 				s.lastError = fmt.Sprintf("invalid row: %s", rowShortcut)
 				return false
@@ -717,7 +707,7 @@ func (s *state) CopyRows(arg string) bool {
 		}
 	}
 
-	s.snarfedRows = rowsToCopy
+	s.snarfedRows = snarfedRows
 
 	s.lastError = fmt.Sprintf("snarfed %d rows", len(s.snarfedRows))
 	return true
