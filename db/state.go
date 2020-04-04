@@ -44,12 +44,10 @@ End:
 	return err
 }
 
-func (s *State) DeleteTagIfEmpty(id int64) (bool, error) {
+func (s *State) DeleteTagIfEmpty(id int64) error {
 	var rows []Row
 	var refs Refs
 	var err error
-
-	deleted := false
 
 	rows, err = s.DB.GetRowsForTagID(id)
 	if err != nil {
@@ -63,9 +61,8 @@ func (s *State) DeleteTagIfEmpty(id int64) (bool, error) {
 
 	if len(rows)+len(refs) == 0 {
 		err = s.DB.DeleteTagByID(id)
-		deleted = true
 	}
 
 End:
-	return deleted, err
+	return err
 }

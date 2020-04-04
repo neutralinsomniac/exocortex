@@ -100,13 +100,10 @@ func (s *state) Refresh() {
 
 func (s *state) SwitchTag(tag db.Tag) {
 	if tag.ID != s.CurrentDBTag.ID {
-		deleted, err := s.DeleteTagIfEmpty(s.CurrentDBTag.ID)
+		err := s.DeleteTagIfEmpty(s.CurrentDBTag.ID)
 		checkErr(err)
-		// if we're switching to a new tag, and this tag didn't just get wiped,
-		//  push it onto our tag stack
-		if !deleted {
-			s.tagStack = append(s.tagStack, s.CurrentDBTag.Name)
-		}
+		// if we're switching to a new tag, push it onto our tag stack
+		s.tagStack = append(s.tagStack, s.CurrentDBTag.Name)
 	}
 
 	s.CurrentDBTag = tag
@@ -128,7 +125,7 @@ func (s *state) PopTag() {
 
 	// have to do the manual tag switch dance since SwitchTag() will push onto the tag stack
 	if tag.ID != s.CurrentDBTag.ID {
-		_, err := s.DeleteTagIfEmpty(s.CurrentDBTag.ID)
+		err := s.DeleteTagIfEmpty(s.CurrentDBTag.ID)
 		checkErr(err)
 	}
 
