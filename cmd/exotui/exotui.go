@@ -23,6 +23,7 @@ type state struct {
 	tagShortcutsRev map[int]db.Tag
 	snarfedRows     []db.Row
 	allTagNames     map[string]bool
+	tagStack        []string // tag.Name
 	lastError       string
 }
 
@@ -98,13 +99,44 @@ func (s *state) Refresh() {
 }
 
 func (s *state) SwitchTag(tag db.Tag) {
-	if tag != s.CurrentDBTag {
-		err := s.DeleteTagIfEmpty(s.CurrentDBTag.ID)
+	if tag.ID != s.CurrentDBTag.ID {
+		deleted, err := s.DeleteTagIfEmpty(s.CurrentDBTag.ID)
+		checkErr(err)
+		// if we're switching to a new tag, and this tag didn't just get wiped,
+		//  push it onto our tag stack
+		if !deleted {
+			s.tagStack = append(s.tagStack, s.CurrentDBTag.Name)
+		}
+	}
+
+	s.CurrentDBTag = tag
+	s.Refresh()
+}
+
+func (s *state) PopTag() {
+	if len(s.tagStack) == 0 {
+		s.lastError = "tag stack empty"
+		return
+	}
+
+	l := len(s.tagStack)
+	tagName := s.tagStack[l-1]
+	s.tagStack = s.tagStack[:l-1]
+
+	tag, err := s.DB.AddTag(tagName)
+	checkErr(err)
+
+	// have to do the manual tag switch dance since SwitchTag() will push onto the tag stack
+	if tag.ID != s.CurrentDBTag.ID {
+		_, err := s.DeleteTagIfEmpty(s.CurrentDBTag.ID)
 		checkErr(err)
 	}
 
 	s.CurrentDBTag = tag
 	s.Refresh()
+	s.lastError = ""
+
+	return
 }
 
 func (s *state) GetShortcutForTag(tag db.Tag) int {
@@ -720,12 +752,13 @@ func (s *state) printHelp() {
 	fmt.Println("[Tags]")
 	fmt.Println("h: jump to today tag ('h'ome)")
 	fmt.Println("t: open all tags menu ('t'ags)")
-	fmt.Println("g: open date picker ('g'oto)")
-	fmt.Println("<: go back one day (left)")
-	fmt.Println(">: go forward one day (right)")
 	fmt.Println("t/<text>: search tag names for <text>")
 	fmt.Println("t <text>: jump to or create to exact tag <text>")
 	fmt.Println("r [text]: rename current tag with text <text> ('r'ename)")
+	fmt.Println("g: open date picker ('g'oto)")
+	fmt.Println("<: go back one day (left)")
+	fmt.Println(">: go forward one day (right)")
+	fmt.Println("b: jump backwards in tag stack ('b'ack)")
 	fmt.Println("")
 	fmt.Println("[Rows]")
 	fmt.Println("[num]: jump to row-referenced tag")
@@ -782,6 +815,8 @@ func main() {
 			programState.NewRow(line[1:])
 		case 'A':
 			programState.InsertRow(line[1:])
+		case 'b':
+			programState.PopTag()
 		case 'd':
 			programState.DeleteRows(line[1:])
 		case 'e':
