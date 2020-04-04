@@ -99,7 +99,7 @@ func (s *state) Refresh() {
 }
 
 func (s *state) SwitchTag(tag db.Tag) {
-	if tag.ID != s.CurrentDBTag.ID {
+	if tag.ID != s.CurrentDBTag.ID && s.CurrentDBTag.ID != 0 {
 		err := s.DeleteTagIfEmpty(s.CurrentDBTag.ID)
 		checkErr(err)
 		// if we're switching to a new tag, push it onto our tag stack
