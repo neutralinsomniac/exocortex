@@ -548,7 +548,7 @@ func (s *state) InsertRow(arg string) {
 func (s *state) DeleteRows(arg string) {
 	arg = strings.TrimSpace(arg)
 	if len(arg) == 0 {
-		s.lastError = "[d]elete <row|row-range>[,<row|row-range>,...]"
+		s.lastError = "[d]elete <*|row|row-range>[,<row|row-range>,...]"
 		return
 	}
 
@@ -703,15 +703,24 @@ func (s *state) PasteRowsStart() {
 func (s *state) CopyRows(arg string) bool {
 	arg = strings.TrimSpace(arg)
 	if len(arg) == 0 {
-		s.lastError = "[y]ank <row|row-range>[,<row|row-range>,...]"
+		s.lastError = "[y]ank <*|row|row-range>[,<row|row-range>,...]"
 		return false
+	}
+
+	if arg == "*" {
+		// copy ALL THE THINGS
+		s.snarfedRows = append([]db.Row(nil), s.CurrentDBRows...)
+
+		s.lastError = fmt.Sprintf("snarfed %d rows", len(s.snarfedRows))
+		return true
 	}
 
 	args := strings.Split(arg, ",")
 
-	alreadySnarfedRows := make(map[db.Row]bool)
 	snarfedRows := make([]db.Row, 0)
+	alreadySnarfedRows := make(map[db.Row]bool)
 	for _, r := range args {
+		// range
 		if strings.Contains(r, "-") {
 			rows, ok := s.SelectRowRange(r)
 			if !ok {
@@ -725,6 +734,7 @@ func (s *state) CopyRows(arg string) bool {
 				}
 			}
 		} else {
+			// single row
 			rowShortcut := strings.TrimSpace(r)
 			if row, ok := s.rowShortcuts[rowShortcut]; ok {
 				if !alreadySnarfedRows[row] {
@@ -761,10 +771,10 @@ func (s *state) printHelp() {
 	fmt.Println("[num]: jump to row-referenced tag")
 	fmt.Println("a [text]: add new row with text [text] or fire up editor if [text] is not present ('a'dd)")
 	fmt.Println("A [text]: add new row in first row slot with text [text] or fire up editor if [text] is not present ('A'dd)")
-	fmt.Println("d <row|row-range>[,<row|row-range>,...]: cut row(s) to snarf buffer ('d'elete)")
+	fmt.Println("d <*|row|row-range>[,<row|row-range>,...]: cut row(s) to snarf buffer ('d'elete)")
 	fmt.Println("e <row>: edit row ('e'dit)")
 	fmt.Println("m <row1> <row2>: move row1 to row2 ('m'ove)")
-	fmt.Println("y <row|row-range>[,<row|row-range>,...]: yank row(s) to snarf buffer ('y'ank)")
+	fmt.Println("y <*|row|row-range>[,<row|row-range>,...]: yank row(s) to snarf buffer ('y'ank)")
 	fmt.Println("p: paste snarfed rows to end of current tag ('p'aste)")
 	fmt.Println("P: paste snarfed rows to beginning of current tag ('P'aste)")
 	fmt.Println("?: print help")
