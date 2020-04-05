@@ -461,7 +461,7 @@ func (s *state) StartCalendar() {
 		case "?":
 			clearScreen()
 			fmt.Println("[day]: switch to tag corresponding to [day]")
-			fmt.Println("h: jump to today's month")
+			fmt.Println("g: jump to today's month")
 			fmt.Println("<: move backwards one month")
 			fmt.Println(">: move forwards one month")
 			fmt.Println("q or [enter]: exit")
@@ -472,7 +472,7 @@ func (s *state) StartCalendar() {
 			currentDate = currentDate.AddDate(0, -1, 0)
 		case ">":
 			currentDate = currentDate.AddDate(0, 1, 0)
-		case "h":
+		case "g":
 			currentDate = time.Now()
 		case "q":
 			s.lastError = ""
