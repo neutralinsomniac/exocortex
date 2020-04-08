@@ -363,11 +363,15 @@ func (s *state) SelectTag(arg string) {
 
 func GetTextFromEditor(initialText []byte) ([]byte, bool) {
 	var text []byte
+	editorCommand := "vi"
 
 	if f, err := ioutil.TempFile("", "exo"); err == nil {
 		defer os.Remove(f.Name())
 		f.Write(initialText)
-		cmd := exec.Command("vi", f.Name())
+		if c := os.Getenv("EDITOR"); c != "" {
+			editorCommand = c
+		}
+		cmd := exec.Command(editorCommand, f.Name())
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
