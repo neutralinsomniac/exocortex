@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
 	"io/ioutil"
 	"math"
@@ -13,11 +12,12 @@ import (
 	"time"
 
 	"github.com/neutralinsomniac/exocortex/db"
+	"github.com/peterh/liner"
 )
 
 type state struct {
 	db.State
-	scanner         *bufio.Scanner
+	scanner         *liner.State
 	rowShortcuts    map[string]db.Row
 	tagShortcuts    map[db.Tag]int
 	tagShortcutsRev map[int]db.Tag
@@ -249,8 +249,7 @@ func (s *state) RenderMain() {
 		fmt.Printf("\n%s", s.lastError)
 	}
 
-	t := time.Now()
-	fmt.Printf("\n[%s] => ", t.Format("15:04:05"))
+	fmt.Println("")
 }
 
 func (s *state) RenameTag(arg string) {
@@ -347,8 +346,7 @@ func (s *state) SelectTag(arg string) {
 		key.Increment()
 	}
 	fmt.Printf("\n[selection]: ")
-	s.scanner.Scan()
-	selection := s.scanner.Text()
+	selection, _ := s.scanner.Prompt("")
 
 	if len(selection) == 0 {
 		s.lastError = ""
@@ -448,11 +446,12 @@ func (s *state) StartCalendar() {
 	currentDate = time.Date(currentDate.Year(), currentDate.Month(), 1, 0, 0, 0, 0, currentDate.Location())
 
 	s.printMonthCalendar(currentDate)
-	fmt.Println("\nenter '?' for help")
-	fmt.Printf("\n=> ")
+	fmt.Printf("\nenter '?' for help")
 
-	for s.scanner.Scan() {
-		line := s.scanner.Text()
+	for {
+		fmt.Println("")
+		line, _ := s.scanner.Prompt("=> ")
+
 		if len(line) == 0 {
 			s.lastError = ""
 			return
@@ -467,7 +466,7 @@ func (s *state) StartCalendar() {
 			fmt.Println("q or [enter]: exit")
 			fmt.Println("")
 			fmt.Println("press [enter] to continue...")
-			s.scanner.Scan()
+			s.scanner.Prompt("")
 		case "<":
 			currentDate = currentDate.AddDate(0, -1, 0)
 		case ">":
@@ -492,7 +491,6 @@ func (s *state) StartCalendar() {
 		}
 
 		s.printMonthCalendar(currentDate)
-		fmt.Printf("\n=> ")
 	}
 }
 
@@ -781,7 +779,7 @@ func (s *state) printHelp() {
 	fmt.Println("")
 	fmt.Println("press [enter] to continue...")
 
-	s.scanner.Scan()
+	s.scanner.Prompt("")
 }
 
 func main() {
@@ -799,13 +797,26 @@ func main() {
 	programState.GoToToday()
 	programState.Refresh()
 
-	scanner := bufio.NewScanner(os.Stdin)
+	scanner := liner.NewLiner()
+	defer scanner.Close()
+
 	programState.scanner = scanner
 	programState.lastError = "enter '?' for help"
 	programState.RenderMain()
 
-	for scanner.Scan() {
-		line := scanner.Text()
+	for {
+		t := time.Now()
+		line, err := scanner.Prompt(fmt.Sprintf("[%s] => ", t.Format("15:04:05")))
+
+		if err == liner.ErrPromptAborted {
+			if len(line) == 0 {
+				break
+			} else {
+				continue
+			}
+		} else if err != nil {
+			break
+		}
 
 		if len(line) == 0 {
 			programState.lastError = ""
@@ -872,6 +883,7 @@ func main() {
 				programState.lastError = fmt.Sprintf("invalid command: %c", line[0])
 			}
 		}
+		scanner.AppendHistory(line)
 		programState.RenderMain()
 	}
 End:
