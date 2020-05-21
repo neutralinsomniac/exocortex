@@ -18,8 +18,8 @@ Rows are bullets that fall under a given tag. When a row references another tag,
 
 * Grab a release binary from [Releases](https://github.com/neutralinsomniac/exocortex/releases)
 OR
-* for **exotui**: `go get -u github.com/neutralinsomniac/exocortex/cmd/exotui`
-* for **exogio**: `go get -u github.com/neutralinsomniac/exocortex/cmd/exogio`
+* for **exotui**: `GO111MODULE=on go get -u github.com/neutralinsomniac/exocortex/cmd/exotui`
+* for **exogio**: `GO111MODULE=on go get -u github.com/neutralinsomniac/exocortex/cmd/exogio`
 
 ## Usage
 
