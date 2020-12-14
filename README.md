@@ -31,7 +31,7 @@ Currently, all persistent data is stored in a sqlite3 database called "exocortex
 
 ### exotui
 
-Enter "?" for in-app help
+Enter "?" for in-app help.
 
 ### exogio
 
