@@ -12,6 +12,8 @@ import (
 	"gioui.org/io/system"
 	"gioui.org/layout"
 	"gioui.org/op"
+
+	//"gioui.org/op/clip"
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
@@ -256,7 +258,7 @@ func render(gtx layout.Context, th *material.Theme) {
 	}
 	in := layout.UniformInset(unit.Dp(8))
 	outerInset := layout.UniformInset(unit.Dp(16))
-	var tagsHeaderDims layout.Dimensions
+	//var tagsHeaderDims layout.Dimensions
 	outerInset.Layout(gtx, func(gtx C) layout.Dimensions {
 		return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
 			// all tags pane
@@ -280,7 +282,6 @@ func render(gtx layout.Context, th *material.Theme) {
 						editor := material.Editor(th, &programState.tagFilterEditor, "Filter/New Tag")
 						editor.TextSize = material.H5(th, "").TextSize
 						return layout.UniformInset(unit.Dp(16)).Layout(gtx, func(gtx C) D {
-							gtx.Constraints.Max.X = tagsHeaderDims.Size.X
 							return editor.Layout(gtx)
 						})
 					}),
@@ -289,7 +290,7 @@ func render(gtx layout.Context, th *material.Theme) {
 							in := layout.UniformInset(unit.Dp(4))
 							return programState.tagList.Layout(gtx, len(programState.filteredTags), func(gtx C, i int) D {
 								return in.Layout(gtx, func(gtx C) D {
-									gtx.Constraints.Min.X = tagsHeaderDims.Size.X
+									//gtx.Constraints.Min.X = tagsHeaderDims.Size.X
 									return programState.filteredTags[i].layout(gtx, th)
 								})
 							})
@@ -307,8 +308,10 @@ func render(gtx layout.Context, th *material.Theme) {
 								return in.Layout(gtx, func(gtx C) D {
 									if programState.editingTagName == false {
 										// add edit tag handler
-										pointer.Rect(image.Rectangle{Max: gtx.Constraints.Min}).Add(gtx.Ops)
-										return material.H3(th, programState.CurrentDBTag.Name).Layout(gtx)
+										dims := material.H3(th, programState.CurrentDBTag.Name).Layout(gtx)
+										pointer.Rect(image.Rectangle{Min: gtx.Constraints.Max}).Add(gtx.Ops)
+										pointer.CursorNameOp{Name: pointer.CursorPointer}.Add(gtx.Ops)
+										return dims
 										//pointer.InputOp{Key: &programState.CurrentDBTag}.Add(gtx.Ops)
 									} else {
 										editor := material.Editor(th, &programState.tagNameEditor, "New tag name")
@@ -364,9 +367,9 @@ func render(gtx layout.Context, th *material.Theme) {
 											switch v := content[i].(type) {
 											case db.Tag:
 												// source tag for refs
-												pointer.Rect(image.Rectangle{Max: gtx.Constraints.Min}).Add(gtx.Ops)
+												//pointer.Rect(image.Rectangle{Max: gtx.Constraints.Min}).Add(gtx.Ops)
+												//pointer.InputOp{Tag: v}.Add(gtx.Ops)
 												return material.H5(th, v.Name).Layout(gtx)
-												//pointer.InputOp{Key: v}.Add(gtx.Ops)
 											case *uiRow:
 												// refs themselves
 												return v.layout(gtx, th)
@@ -434,7 +437,8 @@ func (r *uiRow) layout(gtx layout.Context, th *material.Theme) D {
 			}
 		}
 		// edit row handler
-		pointer.Rect(image.Rectangle{Max: gtx.Constraints.Max}).Add(gtx.Ops)
+		//pointer.Rect(image.Rectangle{Max: gtx.Constraints.Min}).Add(gtx.Ops)
+		//pointer.InputOp{Tag: r}.Add(gtx.Ops)
 		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, flexChildren...)
 	} else {
 		return material.Editor(th, &r.editor, "").Layout(gtx)
