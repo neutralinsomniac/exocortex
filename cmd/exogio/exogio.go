@@ -309,10 +309,9 @@ func render(gtx layout.Context, th *material.Theme) {
 									if programState.editingTagName == false {
 										// add edit tag handler
 										dims := material.H3(th, programState.CurrentDBTag.Name).Layout(gtx)
-										pointer.Rect(image.Rectangle{Min: gtx.Constraints.Max}).Add(gtx.Ops)
-										pointer.CursorNameOp{Name: pointer.CursorPointer}.Add(gtx.Ops)
+										pointer.Rect(image.Rectangle{Max: dims.Size}).Add(gtx.Ops)
+										pointer.InputOp{Tag: &programState.CurrentDBTag, Types: pointer.Release}.Add(gtx.Ops)
 										return dims
-										//pointer.InputOp{Key: &programState.CurrentDBTag}.Add(gtx.Ops)
 									} else {
 										editor := material.Editor(th, &programState.tagNameEditor, "New tag name")
 										editor.TextSize = material.H3(th, "").TextSize
@@ -367,11 +366,16 @@ func render(gtx layout.Context, th *material.Theme) {
 											switch v := content[i].(type) {
 											case db.Tag:
 												// source tag for refs
-												//pointer.Rect(image.Rectangle{Max: gtx.Constraints.Min}).Add(gtx.Ops)
-												//pointer.InputOp{Tag: v}.Add(gtx.Ops)
-												return material.H5(th, v.Name).Layout(gtx)
+												dims := material.H5(th, v.Name).Layout(gtx)
+
+												pointer.Rect(image.Rectangle{Max: dims.Size}).Add(gtx.Ops)
+												pointer.InputOp{Tag: v, Types: pointer.Release}.Add(gtx.Ops)
+												return dims
 											case *uiRow:
 												// refs themselves
+												dims := v.layout(gtx, th)
+												pointer.Rect(image.Rectangle{Max: dims.Size}).Add(gtx.Ops)
+												pointer.InputOp{Tag: v, Types: pointer.Release}.Add(gtx.Ops)
 												return v.layout(gtx, th)
 											}
 											return layout.Dimensions{}
@@ -392,8 +396,21 @@ func (r *uiRow) layout(gtx layout.Context, th *material.Theme) D {
 	for _, e := range gtx.Events(r) {
 		if e, ok := e.(pointer.Event); ok {
 			if e.Type == pointer.Release {
-				r.editing = !r.editing
-				r.editor.Focus()
+				for i, row := range programState.currentUIRows {
+					row.editing = false
+					programState.currentUIRows[i] = row
+				}
+				for tag, rows := range programState.currentUIRefRows {
+					for i, row := range rows {
+						row.editing = false
+						rows[i] = row
+					}
+					programState.currentUIRefRows[tag] = rows
+				}
+				if !r.editing {
+					r.editing = true
+					r.editor.Focus()
+				}
 			}
 		}
 	}
@@ -437,9 +454,10 @@ func (r *uiRow) layout(gtx layout.Context, th *material.Theme) D {
 			}
 		}
 		// edit row handler
-		//pointer.Rect(image.Rectangle{Max: gtx.Constraints.Min}).Add(gtx.Ops)
-		//pointer.InputOp{Tag: r}.Add(gtx.Ops)
-		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, flexChildren...)
+		dims := layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, flexChildren...)
+		pointer.Rect(image.Rectangle{Max: dims.Size}).Add(gtx.Ops)
+		pointer.InputOp{Tag: r, Types: pointer.Release}.Add(gtx.Ops)
+		return dims
 	} else {
 		return material.Editor(th, &r.editor, "").Layout(gtx)
 	}
@@ -447,7 +465,6 @@ func (r *uiRow) layout(gtx layout.Context, th *material.Theme) D {
 
 func (t *uiTagButton) layout(gtx layout.Context, th *material.Theme) D {
 	for t.button.Clicked() {
-		fmt.Println(t, "clicked")
 		programState.CurrentDBTag = t.tag
 		programState.Refresh()
 	}
