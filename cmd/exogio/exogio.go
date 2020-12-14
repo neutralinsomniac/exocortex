@@ -198,6 +198,7 @@ func render(gtx layout.Context, th *material.Theme) {
 	for _, e := range gtx.Events(&programState.CurrentDBTag) {
 		if e, ok := e.(pointer.Event); ok {
 			if e.Type == pointer.Release {
+				unEditAllTheThings()
 				programState.editingTagName = true
 				programState.tagNameEditor.Focus()
 			}
@@ -392,21 +393,26 @@ func render(gtx layout.Context, th *material.Theme) {
 	})
 }
 
+func unEditAllTheThings() {
+	programState.editingTagName = false
+	for i, row := range programState.currentUIRows {
+		row.editing = false
+		programState.currentUIRows[i] = row
+	}
+	for tag, rows := range programState.currentUIRefRows {
+		for i, row := range rows {
+			row.editing = false
+			rows[i] = row
+		}
+		programState.currentUIRefRows[tag] = rows
+	}
+}
+
 func (r *uiRow) layout(gtx layout.Context, th *material.Theme) D {
 	for _, e := range gtx.Events(r) {
 		if e, ok := e.(pointer.Event); ok {
 			if e.Type == pointer.Release {
-				for i, row := range programState.currentUIRows {
-					row.editing = false
-					programState.currentUIRows[i] = row
-				}
-				for tag, rows := range programState.currentUIRefRows {
-					for i, row := range rows {
-						row.editing = false
-						rows[i] = row
-					}
-					programState.currentUIRefRows[tag] = rows
-				}
+				unEditAllTheThings()
 				if !r.editing {
 					r.editing = true
 					r.editor.Focus()
