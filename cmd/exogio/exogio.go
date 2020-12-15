@@ -254,12 +254,13 @@ func render(gtx layout.Context, th *material.Theme) {
 				programState.Refresh()
 			}
 		case widget.ChangeEvent:
+			unEditAllTheThings()
 			programState.FilterTags()
 		}
+
 	}
 	in := layout.UniformInset(unit.Dp(8))
 	outerInset := layout.UniformInset(unit.Dp(16))
-	//var tagsHeaderDims layout.Dimensions
 	outerInset.Layout(gtx, func(gtx C) layout.Dimensions {
 		return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
 			// all tags pane
@@ -291,7 +292,6 @@ func render(gtx layout.Context, th *material.Theme) {
 							in := layout.UniformInset(unit.Dp(4))
 							return programState.tagList.Layout(gtx, len(programState.filteredTags), func(gtx C, i int) D {
 								return in.Layout(gtx, func(gtx C) D {
-									//gtx.Constraints.Min.X = tagsHeaderDims.Size.X
 									return programState.filteredTags[i].layout(gtx, th)
 								})
 							})
@@ -409,6 +409,7 @@ func unEditAllTheThings() {
 }
 
 func (r *uiRow) layout(gtx layout.Context, th *material.Theme) D {
+	// TODO FIX THIS (both the tag button events and this event are getting triggered, but this event is winning)
 	for _, e := range gtx.Events(r) {
 		if e, ok := e.(pointer.Event); ok {
 			if e.Type == pointer.Release {
@@ -443,6 +444,7 @@ func (r *uiRow) layout(gtx layout.Context, th *material.Theme) D {
 		}
 	}
 	if !r.editing {
+		m := op.Record(gtx.Ops)
 		flexChildren := []layout.FlexChild{}
 		for _, item := range r.content {
 			switch v := item.(type) {
@@ -460,9 +462,14 @@ func (r *uiRow) layout(gtx layout.Context, th *material.Theme) D {
 			}
 		}
 		// edit row handler
+
 		dims := layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, flexChildren...)
+		callOp := m.Stop()
+
 		pointer.Rect(image.Rectangle{Max: dims.Size}).Add(gtx.Ops)
 		pointer.InputOp{Tag: r, Types: pointer.Release}.Add(gtx.Ops)
+
+		callOp.Add(gtx.Ops)
 		return dims
 	} else {
 		return material.Editor(th, &r.editor, "").Layout(gtx)
