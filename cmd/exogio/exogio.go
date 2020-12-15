@@ -374,9 +374,6 @@ func render(gtx layout.Context, th *material.Theme) {
 												return dims
 											case *uiRow:
 												// refs themselves
-												dims := v.layout(gtx, th)
-												pointer.Rect(image.Rectangle{Max: dims.Size}).Add(gtx.Ops)
-												pointer.InputOp{Tag: v, Types: pointer.Release}.Add(gtx.Ops)
 												return v.layout(gtx, th)
 											}
 											return layout.Dimensions{}
@@ -444,7 +441,6 @@ func (r *uiRow) layout(gtx layout.Context, th *material.Theme) D {
 		}
 	}
 	if !r.editing {
-		m := op.Record(gtx.Ops)
 		flexChildren := []layout.FlexChild{}
 		for _, item := range r.content {
 			switch v := item.(type) {
@@ -456,21 +452,23 @@ func (r *uiRow) layout(gtx layout.Context, th *material.Theme) D {
 				flexChildren = append(flexChildren, layout.Rigid(func(gtx C) D {
 					return v.layout(gtx, th)
 				}))
-
 			default:
 				panic("unknown type encountered in uiRow.content")
 			}
 		}
 		// edit row handler
-
-		dims := layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, flexChildren...)
-		callOp := m.Stop()
-
-		pointer.Rect(image.Rectangle{Max: dims.Size}).Add(gtx.Ops)
-		pointer.InputOp{Tag: r, Types: pointer.Release}.Add(gtx.Ops)
-
-		callOp.Add(gtx.Ops)
-		return dims
+		return layout.Stack{}.Layout(gtx,
+			layout.Expanded(func(gtx C) D {
+				pointer.Rect(image.Rectangle{Max: gtx.Constraints.Min}).Add(gtx.Ops)
+				pointer.InputOp{Tag: r, Types: pointer.Release}.Add(gtx.Ops)
+				return D{Size: gtx.Constraints.Min}
+			}),
+			layout.Stacked(func(gtx C) D {
+				dims := layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, flexChildren...)
+				dims.Size.X = gtx.Constraints.Max.X
+				return dims
+			}),
+		)
 	} else {
 		return material.Editor(th, &r.editor, "").Layout(gtx)
 	}
