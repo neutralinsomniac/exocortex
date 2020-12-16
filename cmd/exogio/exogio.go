@@ -371,6 +371,7 @@ func render(gtx layout.Context, th *material.Theme) {
 
 												pointer.Rect(image.Rectangle{Max: dims.Size}).Add(gtx.Ops)
 												pointer.InputOp{Tag: v, Types: pointer.Release}.Add(gtx.Ops)
+												pointer.CursorNameOp{Name: pointer.CursorPointer}.Add(gtx.Ops)
 												return dims
 											case *uiRow:
 												// refs themselves
@@ -461,6 +462,7 @@ func (r *uiRow) layout(gtx layout.Context, th *material.Theme) D {
 			layout.Expanded(func(gtx C) D {
 				pointer.Rect(image.Rectangle{Max: gtx.Constraints.Min}).Add(gtx.Ops)
 				pointer.InputOp{Tag: r, Types: pointer.Release}.Add(gtx.Ops)
+				pointer.CursorNameOp{Name: pointer.CursorPointer}.Add(gtx.Ops)
 				return D{Size: gtx.Constraints.Min}
 			}),
 			layout.Stacked(func(gtx C) D {
