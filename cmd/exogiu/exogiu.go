@@ -20,6 +20,15 @@ func checkErr(err error) {
 
 var programState state
 
+func (p *state) Refresh() error {
+	var err error
+
+	fmt.Println("refresh!")
+	p.State.Refresh()
+
+	return err
+}
+
 func (p *state) GoToToday() {
 	t := time.Now()
 	tag, err := programState.DB.AddTag(t.Format("January 02 2006"))
@@ -39,7 +48,7 @@ func getAllTagWidgets() g.Layout {
 	layout := make(g.Layout, 0, len(programState.AllDBTags))
 
 	for _, tag := range programState.AllDBTags {
-		fmt.Println(tag)
+		tag := tag
 		lineWidget := g.Line(
 			g.Button(tag.Name, func() {
 				switchTag(tag)
