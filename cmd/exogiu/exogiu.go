@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"regexp"
 	"time"
 
 	g "github.com/AllenDang/giu"
@@ -10,6 +11,8 @@ import (
 
 type state struct {
 	db.State
+	currentUIRows    []uiRow
+	currentUIRefRows map[db.Tag][]uiRow
 }
 
 func checkErr(err error) {
@@ -18,13 +21,63 @@ func checkErr(err error) {
 	}
 }
 
+type uiRow struct {
+	row     db.Row
+	content []g.Widget         // Label(s) + Button(s)
+	editor  *g.InputTextWidget // Label(s) + Button(s)
+	editing bool
+}
+
 var programState state
+
+var tagRe = regexp.MustCompile(`\[\[(.*?)\]\]`)
 
 func (p *state) Refresh() error {
 	var err error
 
 	fmt.Println("refresh!")
 	p.State.Refresh()
+
+	p.currentUIRows = make([]uiRow, 0, len(p.CurrentDBRows))
+	for i, row := range p.CurrentDBRows {
+		uiRow := uiRow{row: row}
+		for tagIndex := tagRe.FindStringIndex(row.Text); tagIndex != nil; tagIndex = tagRe.FindStringIndex(row.Text) {
+			// leading text
+			uiRow.content = append(uiRow.content, g.LabelWrapped(row.Text[:tagIndex[0]]))
+			// tag button
+			tag, err := p.DB.GetTagByName(row.Text[tagIndex[0]+2 : tagIndex[1]-2])
+			checkErr(err)
+			uiRow.content = append(uiRow.content, g.Button(fmt.Sprintf("%s##cur%d", tag.Name, i), func() {
+				switchTag(tag)
+			}))
+			row.Text = row.Text[tagIndex[1]:]
+		}
+		uiRow.content = append(uiRow.content, g.LabelWrapped(row.Text))
+		uiRow.editor = g.InputText(fmt.Sprintf("##rowEditor%d", i), -1, &row.Text)
+		p.currentUIRows = append(p.currentUIRows, uiRow)
+	}
+
+	p.currentUIRefRows = make(map[db.Tag][]uiRow, len(p.CurrentDBRefs))
+	for tag, rows := range p.CurrentDBRefs {
+		p.currentUIRefRows[tag] = make([]uiRow, len(rows))
+		for i, row := range rows {
+			uiRow := uiRow{row: row}
+			for tagIndex := tagRe.FindStringIndex(row.Text); tagIndex != nil; tagIndex = tagRe.FindStringIndex(row.Text) {
+				// leading text
+				uiRow.content = append(uiRow.content, g.LabelWrapped(row.Text[:tagIndex[0]]))
+				// tag button
+				tag, err := p.DB.GetTagByName(row.Text[tagIndex[0]+2 : tagIndex[1]-2])
+				checkErr(err)
+				uiRow.content = append(uiRow.content, g.Button(fmt.Sprintf("%s##ref%d", tag.Name, i), func() {
+					switchTag(tag)
+				}))
+				row.Text = row.Text[tagIndex[1]:]
+			}
+			uiRow.content = append(uiRow.content, g.LabelWrapped(row.Text))
+			uiRow.editor = g.InputText(fmt.Sprintf("##rowEditor%d", i), -1, &row.Text)
+			p.currentUIRefRows[tag] = append(p.currentUIRefRows[tag], uiRow)
+		}
+	}
 
 	return err
 }
@@ -60,21 +113,60 @@ func getAllTagWidgets() g.Layout {
 }
 
 func getAllRowWidgets() g.Layout {
-	layout := make(g.Layout, 0, len(programState.CurrentDBRows))
+	layout := make(g.Layout, 0, len(programState.currentUIRows))
 
-	for _, row := range programState.CurrentDBRows {
-		lineWidget := g.Row(g.Label(row.Text))
-		layout = append(layout, lineWidget)
+	for _, row := range programState.currentUIRows {
+		row := row
+		if !row.editing {
+			w := g.Row(g.Line(
+				row.content...,
+			))
+			layout = append(layout, w)
+		} else {
+			w := g.Row(g.Line(
+				row.editor,
+			))
+			layout = append(layout, w)
+		}
+	}
+	return layout
+}
+
+func getAllRowRefWidgets() g.Layout {
+	layout := make(g.Layout, 0, len(programState.currentUIRefRows))
+
+	for _, tag := range programState.SortedRefTagsKeys {
+		fmt.Println(programState.currentUIRefRows[tag])
+		w := g.Label(tag.Name)
+		layout = append(layout, w)
+		for _, row := range programState.currentUIRefRows[tag] {
+			if !row.editing {
+				w := g.Row(g.Line(
+					row.content...,
+				))
+				layout = append(layout, w)
+			} else {
+				w := g.Row(g.Line(
+					row.editor,
+				))
+				layout = append(layout, w)
+			}
+		}
 	}
 	return layout
 }
 
 func loop() {
 	g.SingleWindow("hello world", g.Layout{
-		g.SplitLayout("split", g.DirectionHorizontal, true, 200,
+		g.SplitLayout("tagsplit", g.DirectionHorizontal, true, 200,
 			getAllTagWidgets(),
-			getAllRowWidgets(),
-		)})
+			g.Layout{
+				g.SplitLayout("refsplit", g.DirectionVertical, true, 200,
+					getAllRowWidgets(),
+					getAllRowRefWidgets()),
+			},
+		),
+	})
 }
 
 func main() {

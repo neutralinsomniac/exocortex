@@ -76,6 +76,8 @@ func (p *state) GoToToday() {
 	p.Refresh()
 }
 
+var tagRe = regexp.MustCompile(`\[\[(.*?)\]\]`)
+
 func (p *state) Refresh() error {
 	var err error
 
@@ -91,16 +93,13 @@ func (p *state) Refresh() error {
 	}
 	p.FilterTags()
 
-	p.CurrentDBRows, err = p.DB.GetRowsForTagID(p.CurrentDBTag.ID)
-	checkErr(err)
 	p.currentUIRows = make([]uiRow, 0)
 
 	// split the text by tags and pre-calculate the row contents
-	re := regexp.MustCompile(`\[\[(.*?)\]\]`)
 	for _, row := range p.CurrentDBRows {
 		uiRow := uiRow{row: row, editor: widget.Editor{SingleLine: true, Submit: true}}
 		uiRow.editor.SetText(uiRow.row.Text)
-		for tagIndex := re.FindStringIndex(row.Text); tagIndex != nil; tagIndex = re.FindStringIndex(row.Text) {
+		for tagIndex := tagRe.FindStringIndex(row.Text); tagIndex != nil; tagIndex = tagRe.FindStringIndex(row.Text) {
 			// leading text
 			uiRow.content = append(uiRow.content, row.Text[:tagIndex[0]])
 			// tag button
@@ -119,7 +118,7 @@ func (p *state) Refresh() error {
 		for _, row := range rows {
 			uiRow := uiRow{row: row, editor: widget.Editor{SingleLine: true, Submit: true}}
 			uiRow.editor.SetText(uiRow.row.Text)
-			for tagIndex := re.FindStringIndex(row.Text); tagIndex != nil; tagIndex = re.FindStringIndex(row.Text) {
+			for tagIndex := tagRe.FindStringIndex(row.Text); tagIndex != nil; tagIndex = tagRe.FindStringIndex(row.Text) {
 				// leading text
 				uiRow.content = append(uiRow.content, row.Text[:tagIndex[0]])
 				// tag button
@@ -407,7 +406,6 @@ func unEditAllTheThings() {
 }
 
 func (r *uiRow) layout(gtx layout.Context, th *material.Theme) D {
-	// TODO FIX THIS (both the tag button events and this event are getting triggered, but this event is winning)
 	for _, e := range gtx.Events(r) {
 		if e, ok := e.(pointer.Event); ok {
 			if e.Type == pointer.Release {
