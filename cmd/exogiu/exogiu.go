@@ -92,7 +92,6 @@ func (p *state) GoToToday() {
 }
 
 func switchTag(tag db.Tag) {
-	fmt.Println("called switchTag with tag", tag)
 	programState.CurrentDBTag = tag
 	programState.Refresh()
 }
@@ -135,9 +134,11 @@ func getAllRowWidgets() g.Layout {
 func getAllRowRefWidgets() g.Layout {
 	layout := make(g.Layout, 0, len(programState.currentUIRefRows))
 
-	for _, tag := range programState.SortedRefTagsKeys {
-		fmt.Println(programState.currentUIRefRows[tag])
-		w := g.Label(tag.Name)
+	for i, tag := range programState.SortedRefTagsKeys {
+		tag := tag
+		w := g.Selectable(fmt.Sprintf("%s##tagref%d", tag.Name, i), func() {
+			switchTag(tag)
+		})
 		layout = append(layout, w)
 		for _, row := range programState.currentUIRefRows[tag] {
 			if !row.editing {
