@@ -6,12 +6,13 @@ import (
 	"time"
 
 	g "github.com/AllenDang/giu"
+	imgui "github.com/AllenDang/giu/imgui"
 	"github.com/neutralinsomniac/exocortex/db"
 )
 
 type state struct {
 	db.State
-	currentUIRows    []uiRow
+	currentUIRows    []*uiRow
 	currentUIRefRows map[db.Tag][]uiRow
 }
 
@@ -32,14 +33,24 @@ var programState state
 
 var tagRe = regexp.MustCompile(`\[\[(.*?)\]\]`)
 
+func editCB(cbdata imgui.InputTextCallbackData) int32 {
+	fmt.Println(cbdata.EventChar())
+	fmt.Println(cbdata.EventKey())
+	/*switch cbdata.EventKey() {
+	}*/
+	return 0
+}
+
 func (p *state) Refresh() error {
 	var err error
 
 	fmt.Println("refresh!")
 	p.State.Refresh()
 
-	p.currentUIRows = make([]uiRow, 0, len(p.CurrentDBRows))
+	p.currentUIRows = make([]*uiRow, 0, len(p.CurrentDBRows))
 	for i, row := range p.CurrentDBRows {
+		wholeRow := row
+		row := row
 		uiRow := uiRow{row: row}
 		for tagIndex := tagRe.FindStringIndex(row.Text); tagIndex != nil; tagIndex = tagRe.FindStringIndex(row.Text) {
 			// leading text
@@ -53,8 +64,14 @@ func (p *state) Refresh() error {
 			row.Text = row.Text[tagIndex[1]:]
 		}
 		uiRow.content = append(uiRow.content, g.LabelWrapped(row.Text))
-		uiRow.editor = g.InputText(fmt.Sprintf("##rowEditor%d", i), -1, &row.Text)
-		p.currentUIRows = append(p.currentUIRows, uiRow)
+		uiRow.content = append(uiRow.content, g.Button(fmt.Sprintf("Edit##row%d", i), func() {
+			uiRow.editing = !uiRow.editing
+		}))
+		uiRow.editor = g.InputTextV(fmt.Sprintf("##rowEditor%d", i), -1, &wholeRow.Text, g.InputTextFlagsCallbackAlways, editCB, func() {
+			p.DB.UpdateRowText(row.ID, wholeRow.Text)
+			p.Refresh()
+		})
+		p.currentUIRows = append(p.currentUIRows, &uiRow)
 	}
 
 	p.currentUIRefRows = make(map[db.Tag][]uiRow, len(p.CurrentDBRefs))
@@ -117,9 +134,11 @@ func getAllRowWidgets() g.Layout {
 	for _, row := range programState.currentUIRows {
 		row := row
 		if !row.editing {
-			w := g.Row(g.Line(
-				row.content...,
-			))
+			w := g.Row(
+				g.Line(
+					row.content...,
+				),
+			)
 			layout = append(layout, w)
 		} else {
 			w := g.Row(g.Line(
