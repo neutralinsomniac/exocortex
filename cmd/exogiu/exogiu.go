@@ -6,12 +6,12 @@ import (
 	"time"
 
 	g "github.com/AllenDang/giu"
-	imgui "github.com/AllenDang/giu/imgui"
 	"github.com/neutralinsomniac/exocortex/db"
 )
 
 type state struct {
 	db.State
+	addRowString     string
 	currentUIRows    []*uiRow
 	currentUIRefRows map[db.Tag][]uiRow
 }
@@ -32,14 +32,6 @@ type uiRow struct {
 var programState state
 
 var tagRe = regexp.MustCompile(`\[\[(.*?)\]\]`)
-
-func editCB(cbdata imgui.InputTextCallbackData) int32 {
-	fmt.Println(cbdata.EventChar())
-	fmt.Println(cbdata.EventKey())
-	/*switch cbdata.EventKey() {
-	}*/
-	return 0
-}
 
 func (p *state) Refresh() error {
 	var err error
@@ -64,10 +56,7 @@ func (p *state) Refresh() error {
 			row.Text = row.Text[tagIndex[1]:]
 		}
 		uiRow.content = append(uiRow.content, g.LabelWrapped(row.Text))
-		uiRow.content = append(uiRow.content, g.Button(fmt.Sprintf("Edit##row%d", i), func() {
-			uiRow.editing = !uiRow.editing
-		}))
-		uiRow.editor = g.InputTextV(fmt.Sprintf("##rowEditor%d", i), -1, &wholeRow.Text, g.InputTextFlagsCallbackAlways, editCB, func() {
+		uiRow.editor = g.InputTextV(fmt.Sprintf("##rowEditor%d", i), -1, &wholeRow.Text, g.InputTextFlagsEnterReturnsTrue, nil, func() {
 			p.DB.UpdateRowText(row.ID, wholeRow.Text)
 			p.Refresh()
 		})
@@ -78,6 +67,8 @@ func (p *state) Refresh() error {
 	for tag, rows := range p.CurrentDBRefs {
 		p.currentUIRefRows[tag] = make([]uiRow, len(rows))
 		for i, row := range rows {
+			wholeRow := row
+			row := row
 			uiRow := uiRow{row: row}
 			for tagIndex := tagRe.FindStringIndex(row.Text); tagIndex != nil; tagIndex = tagRe.FindStringIndex(row.Text) {
 				// leading text
@@ -91,7 +82,10 @@ func (p *state) Refresh() error {
 				row.Text = row.Text[tagIndex[1]:]
 			}
 			uiRow.content = append(uiRow.content, g.LabelWrapped(row.Text))
-			uiRow.editor = g.InputText(fmt.Sprintf("##rowEditor%d", i), -1, &row.Text)
+			uiRow.editor = g.InputTextV(fmt.Sprintf("##rowRefEditor%d", i), -1, &wholeRow.Text, g.InputTextFlagsEnterReturnsTrue|g.InputTextFlagsNoHorizontalScroll, nil, func() {
+				p.DB.UpdateRowText(row.ID, wholeRow.Text)
+				p.Refresh()
+			})
 			p.currentUIRefRows[tag] = append(p.currentUIRefRows[tag], uiRow)
 		}
 	}
@@ -138,6 +132,11 @@ func getAllRowWidgets() g.Layout {
 				g.Line(
 					row.content...,
 				),
+				g.Custom(func() {
+					if g.IsItemClicked(g.MouseButtonRight) {
+						row.editing = !row.editing
+					}
+				}),
 			)
 			layout = append(layout, w)
 		} else {
@@ -152,6 +151,8 @@ func getAllRowWidgets() g.Layout {
 
 func getAllRowRefWidgets() g.Layout {
 	layout := make(g.Layout, 0, len(programState.currentUIRefRows))
+
+	layout = append(layout, g.Label(fmt.Sprintf("References to %s", programState.CurrentDBTag.Name)))
 
 	for i, tag := range programState.SortedRefTagsKeys {
 		tag := tag
@@ -177,10 +178,16 @@ func getAllRowRefWidgets() g.Layout {
 }
 
 func loop() {
-	g.SingleWindow("hello world", g.Layout{
+	g.SingleWindow("exogiu", g.Layout{
 		g.SplitLayout("tagsplit", g.DirectionHorizontal, true, 200,
 			getAllTagWidgets(),
 			g.Layout{
+				g.Label(fmt.Sprintf("%s", programState.CurrentDBTag.Name)),
+				g.InputTextV("Add row", -1, &programState.addRowString, g.InputTextFlagsEnterReturnsTrue, nil, func() {
+					programState.DB.AddRow(programState.CurrentDBTag.ID, programState.addRowString, 0)
+					programState.addRowString = ""
+					programState.Refresh()
+				}),
 				g.SplitLayout("refsplit", g.DirectionVertical, true, 200,
 					getAllRowWidgets(),
 					getAllRowRefWidgets()),
