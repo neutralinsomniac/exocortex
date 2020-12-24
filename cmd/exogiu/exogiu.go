@@ -12,6 +12,7 @@ import (
 
 type state struct {
 	db.State
+	editingTagName   bool
 	addTagStr        string
 	datePicker       time.Time
 	addRowString     string
@@ -134,6 +135,29 @@ func switchTag(tag db.Tag) {
 	programState.Refresh()
 }
 
+func getTagNameWidget() g.Layout {
+	layout := make(g.Layout, 0)
+	newTag := programState.CurrentDBTag.Name
+
+	if !programState.editingTagName {
+		layout = append(layout, g.Label(fmt.Sprintf("%s", programState.CurrentDBTag.Name)))
+		layout = append(layout, g.Custom(func() {
+			if g.IsItemClicked(g.MouseButtonRight) {
+				programState.editingTagName = true
+			}
+		}))
+	} else {
+		layout = append(layout, g.InputTextV("##tagEditor", -1, &newTag, g.InputTextFlagsEnterReturnsTrue, nil, func() {
+			tag, err := programState.DB.RenameTag(programState.CurrentDBTag.Name, newTag)
+			if err == nil {
+				switchTag(tag)
+				programState.editingTagName = false
+			}
+			programState.Refresh()
+		}))
+	}
+	return layout
+}
 func getAllTagWidgets() g.Layout {
 	layout := make(g.Layout, 0, len(programState.AllDBTags))
 
@@ -249,7 +273,7 @@ func loop() {
 				getAllTagWidgets(),
 			},
 			g.Layout{
-				g.Label(fmt.Sprintf("%s", programState.CurrentDBTag.Name)),
+				getTagNameWidget(),
 				g.InputTextV("##addrow", -1, &programState.addRowString, g.InputTextFlagsEnterReturnsTrue, nil, func() {
 					if len(programState.addRowString) > 0 {
 						programState.DB.AddRow(programState.CurrentDBTag.ID, programState.addRowString, 0)
