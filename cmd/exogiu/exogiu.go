@@ -215,8 +215,8 @@ func getAllRowRefWidgets() g.Layout {
 							programState.DB.UpdateRowText(row.row.ID, row.row.Text)
 						} else {
 							programState.DB.DeleteRowByID(row.row.ID)
-							programState.Refresh()
 						}
+						programState.Refresh()
 					}),
 				))
 				layout = append(layout, w)
