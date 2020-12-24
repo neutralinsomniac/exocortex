@@ -11,6 +11,7 @@ import (
 
 type state struct {
 	db.State
+	datePicker       time.Time
 	addRowString     string
 	currentUIRows    []*uiRow
 	currentUIRefRows map[db.Tag][]*uiRow
@@ -35,8 +36,9 @@ var tagRe = regexp.MustCompile(`\[\[(.*?)\]\]`)
 func (p *state) Refresh() error {
 	var err error
 
-	fmt.Println("refresh!")
 	p.State.Refresh()
+
+	p.datePicker = time.Now()
 
 	p.currentUIRows = make([]*uiRow, 0, len(p.CurrentDBRows))
 	for i, row := range p.CurrentDBRows {
@@ -45,15 +47,30 @@ func (p *state) Refresh() error {
 		for tagIndex := tagRe.FindStringIndex(row.Text); tagIndex != nil; tagIndex = tagRe.FindStringIndex(row.Text) {
 			// leading text
 			uiRow.content = append(uiRow.content, g.LabelWrapped(row.Text[:tagIndex[0]]))
+			uiRow.content = append(uiRow.content, g.Custom(func() {
+				if g.IsItemClicked(g.MouseButtonRight) {
+					uiRow.editing = !uiRow.editing
+				}
+			}))
 			// tag button
 			tag, err := p.DB.GetTagByName(row.Text[tagIndex[0]+2 : tagIndex[1]-2])
 			checkErr(err)
 			uiRow.content = append(uiRow.content, g.Button(fmt.Sprintf("%s##cur%d", tag.Name, i), func() {
 				switchTag(tag)
 			}))
+			uiRow.content = append(uiRow.content, g.Custom(func() {
+				if g.IsItemClicked(g.MouseButtonRight) {
+					uiRow.editing = !uiRow.editing
+				}
+			}))
 			row.Text = row.Text[tagIndex[1]:]
 		}
 		uiRow.content = append(uiRow.content, g.LabelWrapped(row.Text))
+		uiRow.content = append(uiRow.content, g.Custom(func() {
+			if g.IsItemClicked(g.MouseButtonRight) {
+				uiRow.editing = !uiRow.editing
+			}
+		}))
 		p.currentUIRows = append(p.currentUIRows, &uiRow)
 	}
 
@@ -66,15 +83,30 @@ func (p *state) Refresh() error {
 			for tagIndex := tagRe.FindStringIndex(row.Text); tagIndex != nil; tagIndex = tagRe.FindStringIndex(row.Text) {
 				// leading text
 				uiRow.content = append(uiRow.content, g.LabelWrapped(row.Text[:tagIndex[0]]))
+				uiRow.content = append(uiRow.content, g.Custom(func() {
+					if g.IsItemClicked(g.MouseButtonRight) {
+						uiRow.editing = !uiRow.editing
+					}
+				}))
 				// tag button
 				tag, err := p.DB.GetTagByName(row.Text[tagIndex[0]+2 : tagIndex[1]-2])
 				checkErr(err)
 				uiRow.content = append(uiRow.content, g.Button(fmt.Sprintf("%s##ref%d", tag.Name, i), func() {
 					switchTag(tag)
 				}))
+				uiRow.content = append(uiRow.content, g.Custom(func() {
+					if g.IsItemClicked(g.MouseButtonRight) {
+						uiRow.editing = !uiRow.editing
+					}
+				}))
 				row.Text = row.Text[tagIndex[1]:]
 			}
 			uiRow.content = append(uiRow.content, g.LabelWrapped(row.Text))
+			uiRow.content = append(uiRow.content, g.Custom(func() {
+				if g.IsItemClicked(g.MouseButtonRight) {
+					uiRow.editing = !uiRow.editing
+				}
+			}))
 			p.currentUIRefRows[tag] = append(p.currentUIRefRows[tag], &uiRow)
 		}
 	}
@@ -121,17 +153,21 @@ func getAllRowWidgets() g.Layout {
 				g.Line(
 					row.content...,
 				),
-				g.Custom(func() {
+				/*g.Custom(func() {
 					if g.IsItemClicked(g.MouseButtonRight) {
 						row.editing = !row.editing
 					}
-				}),
+				}),*/
 			)
 			layout = append(layout, w)
 		} else {
 			w := g.Row(g.Line(
 				g.InputTextV(fmt.Sprintf("##rowEditor%d", i), -1, &row.row.Text, g.InputTextFlagsEnterReturnsTrue, nil, func() {
-					programState.DB.UpdateRowText(row.row.ID, row.row.Text)
+					if len(row.row.Text) > 0 {
+						programState.DB.UpdateRowText(row.row.ID, row.row.Text)
+					} else {
+						programState.DB.DeleteRowByID(row.row.ID)
+					}
 					programState.Refresh()
 				}),
 			))
@@ -159,18 +195,22 @@ func getAllRowRefWidgets() g.Layout {
 					g.Line(
 						row.content...,
 					),
-					g.Custom(func() {
+					/*g.Custom(func() {
 						if g.IsItemClicked(g.MouseButtonRight) {
 							row.editing = !row.editing
 						}
-					}),
+					}),*/
 				)
 				layout = append(layout, w)
 			} else {
 				w := g.Row(g.Line(
 					g.InputTextV(fmt.Sprintf("##rowRefEditor%d", i), -1, &row.row.Text, g.InputTextFlagsEnterReturnsTrue|g.InputTextFlagsNoHorizontalScroll, nil, func() {
-						programState.DB.UpdateRowText(row.row.ID, row.row.Text)
-						programState.Refresh()
+						if len(row.row.Text) > 0 {
+							programState.DB.UpdateRowText(row.row.ID, row.row.Text)
+						} else {
+							programState.DB.DeleteRowByID(row.row.ID)
+							programState.Refresh()
+						}
 					}),
 				))
 				layout = append(layout, w)
@@ -183,10 +223,13 @@ func getAllRowRefWidgets() g.Layout {
 func loop() {
 	g.SingleWindow("exogiu", g.Layout{
 		g.SplitLayout("tagsplit", g.DirectionHorizontal, true, 200,
-			getAllTagWidgets(),
+			g.Layout{
+				g.DatePicker("##date", &programState.datePicker, 0, nil),
+				getAllTagWidgets(),
+			},
 			g.Layout{
 				g.Label(fmt.Sprintf("%s", programState.CurrentDBTag.Name)),
-				g.InputTextV("Add row", -1, &programState.addRowString, g.InputTextFlagsEnterReturnsTrue, nil, func() {
+				g.InputTextV("##addrow", -1, &programState.addRowString, g.InputTextFlagsEnterReturnsTrue, nil, func() {
 					programState.DB.AddRow(programState.CurrentDBTag.ID, programState.addRowString, 0)
 					programState.addRowString = ""
 					programState.Refresh()
