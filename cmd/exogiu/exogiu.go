@@ -251,9 +251,11 @@ func loop() {
 			g.Layout{
 				g.Label(fmt.Sprintf("%s", programState.CurrentDBTag.Name)),
 				g.InputTextV("##addrow", -1, &programState.addRowString, g.InputTextFlagsEnterReturnsTrue, nil, func() {
-					programState.DB.AddRow(programState.CurrentDBTag.ID, programState.addRowString, 0)
-					programState.addRowString = ""
-					programState.Refresh()
+					if len(programState.addRowString) > 0 {
+						programState.DB.AddRow(programState.CurrentDBTag.ID, programState.addRowString, 0)
+						programState.addRowString = ""
+						programState.Refresh()
+					}
 					imgui.SetKeyboardFocusHere()
 				}),
 				g.SplitLayout("refsplit", g.DirectionVertical, true, 200,
