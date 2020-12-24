@@ -203,8 +203,9 @@ func main() {
 
 	programState.DB = &exoDB
 
+	wnd := g.NewMasterWindow("exogiu", 800, 600, 0, nil)
+
 	programState.GoToToday()
 
-	wnd := g.NewMasterWindow("exogiu", 800, 600, 0, nil)
 	wnd.Main(loop)
 }
