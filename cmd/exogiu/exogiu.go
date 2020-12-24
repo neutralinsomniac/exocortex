@@ -239,7 +239,13 @@ func loop() {
 						imgui.SetKeyboardFocusHere()
 					}
 				}),
-				g.DatePicker("##date", &programState.datePicker, 0, nil),
+				g.DatePicker("##date", &programState.datePicker, 0, func() {
+					tagStr := programState.datePicker.Format("January 02 2006")
+					tag, err := programState.DB.AddTag(tagStr)
+					if err == nil {
+						switchTag(tag)
+					}
+				}),
 				getAllTagWidgets(),
 			},
 			g.Layout{
