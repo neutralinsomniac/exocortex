@@ -13,7 +13,7 @@ type state struct {
 	db.State
 	addRowString     string
 	currentUIRows    []*uiRow
-	currentUIRefRows map[db.Tag][]uiRow
+	currentUIRefRows map[db.Tag][]*uiRow
 }
 
 func checkErr(err error) {
@@ -57,9 +57,9 @@ func (p *state) Refresh() error {
 		p.currentUIRows = append(p.currentUIRows, &uiRow)
 	}
 
-	p.currentUIRefRows = make(map[db.Tag][]uiRow, len(p.CurrentDBRefs))
+	p.currentUIRefRows = make(map[db.Tag][]*uiRow, len(p.CurrentDBRefs))
 	for tag, rows := range p.CurrentDBRefs {
-		p.currentUIRefRows[tag] = make([]uiRow, len(rows))
+		p.currentUIRefRows[tag] = make([]*uiRow, 0, len(rows))
 		for i, row := range rows {
 			row := row
 			uiRow := uiRow{row: row}
@@ -75,7 +75,7 @@ func (p *state) Refresh() error {
 				row.Text = row.Text[tagIndex[1]:]
 			}
 			uiRow.content = append(uiRow.content, g.LabelWrapped(row.Text))
-			p.currentUIRefRows[tag] = append(p.currentUIRefRows[tag], uiRow)
+			p.currentUIRefRows[tag] = append(p.currentUIRefRows[tag], &uiRow)
 		}
 	}
 
@@ -155,9 +155,16 @@ func getAllRowRefWidgets() g.Layout {
 		for i, row := range programState.currentUIRefRows[tag] {
 			row := row
 			if !row.editing {
-				w := g.Row(g.Line(
-					row.content...,
-				))
+				w := g.Row(
+					g.Line(
+						row.content...,
+					),
+					g.Custom(func() {
+						if g.IsItemClicked(g.MouseButtonRight) {
+							row.editing = !row.editing
+						}
+					}),
+				)
 				layout = append(layout, w)
 			} else {
 				w := g.Row(g.Line(
