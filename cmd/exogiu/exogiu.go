@@ -24,8 +24,7 @@ func checkErr(err error) {
 
 type uiRow struct {
 	row     db.Row
-	content []g.Widget         // Label(s) + Button(s)
-	editor  *g.InputTextWidget // Label(s) + Button(s)
+	content []g.Widget // Label(s) + Button(s)
 	editing bool
 }
 
@@ -41,7 +40,6 @@ func (p *state) Refresh() error {
 
 	p.currentUIRows = make([]*uiRow, 0, len(p.CurrentDBRows))
 	for i, row := range p.CurrentDBRows {
-		wholeRow := row
 		row := row
 		uiRow := uiRow{row: row}
 		for tagIndex := tagRe.FindStringIndex(row.Text); tagIndex != nil; tagIndex = tagRe.FindStringIndex(row.Text) {
@@ -56,10 +54,6 @@ func (p *state) Refresh() error {
 			row.Text = row.Text[tagIndex[1]:]
 		}
 		uiRow.content = append(uiRow.content, g.LabelWrapped(row.Text))
-		uiRow.editor = g.InputTextV(fmt.Sprintf("##rowEditor%d", i), -1, &wholeRow.Text, g.InputTextFlagsEnterReturnsTrue, nil, func() {
-			p.DB.UpdateRowText(row.ID, wholeRow.Text)
-			p.Refresh()
-		})
 		p.currentUIRows = append(p.currentUIRows, &uiRow)
 	}
 
@@ -67,7 +61,6 @@ func (p *state) Refresh() error {
 	for tag, rows := range p.CurrentDBRefs {
 		p.currentUIRefRows[tag] = make([]uiRow, len(rows))
 		for i, row := range rows {
-			wholeRow := row
 			row := row
 			uiRow := uiRow{row: row}
 			for tagIndex := tagRe.FindStringIndex(row.Text); tagIndex != nil; tagIndex = tagRe.FindStringIndex(row.Text) {
@@ -82,10 +75,6 @@ func (p *state) Refresh() error {
 				row.Text = row.Text[tagIndex[1]:]
 			}
 			uiRow.content = append(uiRow.content, g.LabelWrapped(row.Text))
-			uiRow.editor = g.InputTextV(fmt.Sprintf("##rowRefEditor%d", i), -1, &wholeRow.Text, g.InputTextFlagsEnterReturnsTrue|g.InputTextFlagsNoHorizontalScroll, nil, func() {
-				p.DB.UpdateRowText(row.ID, wholeRow.Text)
-				p.Refresh()
-			})
 			p.currentUIRefRows[tag] = append(p.currentUIRefRows[tag], uiRow)
 		}
 	}
@@ -125,7 +114,7 @@ func getAllTagWidgets() g.Layout {
 func getAllRowWidgets() g.Layout {
 	layout := make(g.Layout, 0, len(programState.currentUIRows))
 
-	for _, row := range programState.currentUIRows {
+	for i, row := range programState.currentUIRows {
 		row := row
 		if !row.editing {
 			w := g.Row(
@@ -141,7 +130,10 @@ func getAllRowWidgets() g.Layout {
 			layout = append(layout, w)
 		} else {
 			w := g.Row(g.Line(
-				row.editor,
+				g.InputTextV(fmt.Sprintf("##rowEditor%d", i), -1, &row.row.Text, g.InputTextFlagsEnterReturnsTrue, nil, func() {
+					programState.DB.UpdateRowText(row.row.ID, row.row.Text)
+					programState.Refresh()
+				}),
 			))
 			layout = append(layout, w)
 		}
@@ -160,7 +152,8 @@ func getAllRowRefWidgets() g.Layout {
 			switchTag(tag)
 		})
 		layout = append(layout, w)
-		for _, row := range programState.currentUIRefRows[tag] {
+		for i, row := range programState.currentUIRefRows[tag] {
+			row := row
 			if !row.editing {
 				w := g.Row(g.Line(
 					row.content...,
@@ -168,7 +161,10 @@ func getAllRowRefWidgets() g.Layout {
 				layout = append(layout, w)
 			} else {
 				w := g.Row(g.Line(
-					row.editor,
+					g.InputTextV(fmt.Sprintf("##rowRefEditor%d", i), -1, &row.row.Text, g.InputTextFlagsEnterReturnsTrue|g.InputTextFlagsNoHorizontalScroll, nil, func() {
+						programState.DB.UpdateRowText(row.row.ID, row.row.Text)
+						programState.Refresh()
+					}),
 				))
 				layout = append(layout, w)
 			}
