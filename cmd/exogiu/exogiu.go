@@ -6,11 +6,13 @@ import (
 	"time"
 
 	g "github.com/AllenDang/giu"
+	"github.com/AllenDang/giu/imgui"
 	"github.com/neutralinsomniac/exocortex/db"
 )
 
 type state struct {
 	db.State
+	addTagStr        string
 	datePicker       time.Time
 	addRowString     string
 	currentUIRows    []*uiRow
@@ -124,6 +126,10 @@ func (p *state) GoToToday() {
 }
 
 func switchTag(tag db.Tag) {
+	if tag.ID != programState.CurrentDBTag.ID && programState.CurrentDBTag.ID != 0 {
+		err := programState.DeleteTagIfEmpty(programState.CurrentDBTag.ID)
+		checkErr(err)
+	}
 	programState.CurrentDBTag = tag
 	programState.Refresh()
 }
@@ -224,6 +230,15 @@ func loop() {
 	g.SingleWindow("exogiu", g.Layout{
 		g.SplitLayout("tagsplit", g.DirectionHorizontal, true, 200,
 			g.Layout{
+				g.InputTextV("##addtag", -1, &programState.addTagStr, g.InputTextFlagsEnterReturnsTrue, nil, func() {
+					tag, err := programState.DB.AddTag(programState.addTagStr)
+					if err == nil {
+						programState.addTagStr = ""
+						programState.CurrentDBTag = tag
+						programState.Refresh()
+						imgui.SetKeyboardFocusHere()
+					}
+				}),
 				g.DatePicker("##date", &programState.datePicker, 0, nil),
 				getAllTagWidgets(),
 			},
@@ -233,6 +248,7 @@ func loop() {
 					programState.DB.AddRow(programState.CurrentDBTag.ID, programState.addRowString, 0)
 					programState.addRowString = ""
 					programState.Refresh()
+					imgui.SetKeyboardFocusHere()
 				}),
 				g.SplitLayout("refsplit", g.DirectionVertical, true, 200,
 					getAllRowWidgets(),
