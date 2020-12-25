@@ -12,12 +12,13 @@ import (
 
 type state struct {
 	db.State
-	editingTagName   bool
-	addTagStr        string
-	datePicker       time.Time
-	addRowString     string
-	currentUIRows    []*uiRow
-	currentUIRefRows map[db.Tag][]*uiRow
+	editingTagName      bool
+	addTagStr           string
+	datePicker          time.Time
+	addRowString        string
+	currentUIRows       []*uiRow
+	currentUIRefRows    map[db.Tag][]*uiRow
+	currentThingEditing *bool
 }
 
 func checkErr(err error) {
@@ -43,6 +44,9 @@ func (p *state) Refresh() error {
 
 	p.datePicker = time.Now()
 
+	p.currentThingEditing = nil
+	p.editingTagName = false
+
 	p.currentUIRows = make([]*uiRow, 0, len(p.CurrentDBRows))
 	for i, row := range p.CurrentDBRows {
 		row := row
@@ -52,7 +56,11 @@ func (p *state) Refresh() error {
 			uiRow.content = append(uiRow.content, g.LabelWrapped(row.Text[:tagIndex[0]]))
 			uiRow.content = append(uiRow.content, g.Custom(func() {
 				if g.IsItemClicked(g.MouseButtonRight) {
-					uiRow.editing = !uiRow.editing
+					if p.currentThingEditing != nil {
+						*p.currentThingEditing = false
+					}
+					uiRow.editing = true
+					p.currentThingEditing = &uiRow.editing
 				}
 			}))
 			// tag button
@@ -63,7 +71,11 @@ func (p *state) Refresh() error {
 			}))
 			uiRow.content = append(uiRow.content, g.Custom(func() {
 				if g.IsItemClicked(g.MouseButtonRight) {
-					uiRow.editing = !uiRow.editing
+					if p.currentThingEditing != nil {
+						*p.currentThingEditing = false
+					}
+					uiRow.editing = true
+					p.currentThingEditing = &uiRow.editing
 				}
 			}))
 			row.Text = row.Text[tagIndex[1]:]
@@ -71,7 +83,11 @@ func (p *state) Refresh() error {
 		uiRow.content = append(uiRow.content, g.LabelWrapped(row.Text))
 		uiRow.content = append(uiRow.content, g.Custom(func() {
 			if g.IsItemClicked(g.MouseButtonRight) {
-				uiRow.editing = !uiRow.editing
+				if p.currentThingEditing != nil {
+					*p.currentThingEditing = false
+				}
+				uiRow.editing = true
+				p.currentThingEditing = &uiRow.editing
 			}
 		}))
 		p.currentUIRows = append(p.currentUIRows, &uiRow)
@@ -88,7 +104,11 @@ func (p *state) Refresh() error {
 				uiRow.content = append(uiRow.content, g.LabelWrapped(row.Text[:tagIndex[0]]))
 				uiRow.content = append(uiRow.content, g.Custom(func() {
 					if g.IsItemClicked(g.MouseButtonRight) {
-						uiRow.editing = !uiRow.editing
+						if p.currentThingEditing != nil {
+							*p.currentThingEditing = false
+						}
+						uiRow.editing = true
+						p.currentThingEditing = &uiRow.editing
 					}
 				}))
 				// tag button
@@ -99,7 +119,11 @@ func (p *state) Refresh() error {
 				}))
 				uiRow.content = append(uiRow.content, g.Custom(func() {
 					if g.IsItemClicked(g.MouseButtonRight) {
-						uiRow.editing = !uiRow.editing
+						if p.currentThingEditing != nil {
+							*p.currentThingEditing = false
+						}
+						uiRow.editing = true
+						p.currentThingEditing = &uiRow.editing
 					}
 				}))
 				row.Text = row.Text[tagIndex[1]:]
@@ -107,7 +131,11 @@ func (p *state) Refresh() error {
 			uiRow.content = append(uiRow.content, g.LabelWrapped(row.Text))
 			uiRow.content = append(uiRow.content, g.Custom(func() {
 				if g.IsItemClicked(g.MouseButtonRight) {
-					uiRow.editing = !uiRow.editing
+					if p.currentThingEditing != nil {
+						*p.currentThingEditing = false
+					}
+					uiRow.editing = true
+					p.currentThingEditing = &uiRow.editing
 				}
 			}))
 			p.currentUIRefRows[tag] = append(p.currentUIRefRows[tag], &uiRow)
@@ -143,7 +171,11 @@ func getTagNameWidget() g.Layout {
 		layout = append(layout, g.Label(fmt.Sprintf("%s", programState.CurrentDBTag.Name)))
 		layout = append(layout, g.Custom(func() {
 			if g.IsItemClicked(g.MouseButtonRight) {
+				if programState.currentThingEditing != nil {
+					*programState.currentThingEditing = false
+				}
 				programState.editingTagName = true
+				programState.currentThingEditing = &programState.editingTagName
 			}
 		}))
 	} else {
@@ -151,7 +183,6 @@ func getTagNameWidget() g.Layout {
 			tag, err := programState.DB.RenameTag(programState.CurrentDBTag.Name, newTag)
 			if err == nil {
 				switchTag(tag)
-				programState.editingTagName = false
 			}
 			programState.Refresh()
 		}))
