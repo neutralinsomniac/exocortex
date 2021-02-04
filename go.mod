@@ -3,7 +3,7 @@ module github.com/neutralinsomniac/exocortex
 go 1.15
 
 require (
-	gioui.org v0.0.0-20201215171148-578c226278f3
+	gioui.org v0.0.0-20210204101020-403f01655a36
 	github.com/AllenDang/giu v0.4.3-0.20201224132820-8761648db044
 	github.com/go-gl/glfw/v3.3/glfw v0.0.0-20201108214237-06ea97f0c265 // indirect
 	github.com/inkyblackness/imgui-go v1.12.0 // indirect
