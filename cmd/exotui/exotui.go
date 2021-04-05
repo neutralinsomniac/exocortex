@@ -760,6 +760,7 @@ func (s *state) printHelp() {
 	clearScreen()
 	fmt.Println("[Tags]")
 	fmt.Println("g: jump to today tag ('g'oto)")
+	fmt.Println("n: create new tag ('n'ew)")
 	fmt.Println("t: open all tags menu ('t'ags)")
 	fmt.Println("t/<text>: search tag names for <text>")
 	fmt.Println("t <text>: jump to or create to exact tag <text>")
