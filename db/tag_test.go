@@ -161,7 +161,7 @@ func TestRenameTag(t *testing.T) {
 	}
 
 	if len(tags) != 3 {
-		t.Fatal("GetAllTags() did not return expected number of rows (expected: 3, got: " + string(len(tags)) + ")")
+		t.Fatal(fmt.Sprint("GetAllTags() did not return expected number of rows (expected: 3, got: ", len(tags), ")"))
 	}
 
 	if tags[0].Name != "test4" {
