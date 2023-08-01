@@ -6,7 +6,7 @@ import (
 	"time"
 
 	g "github.com/AllenDang/giu"
-	"github.com/AllenDang/giu/imgui"
+	// "github.com/AllenDang/imgui-go"
 	"github.com/neutralinsomniac/exocortex/db"
 )
 
@@ -291,7 +291,7 @@ func loop() {
 						programState.addTagStr = ""
 						programState.CurrentDBTag = tag
 						programState.Refresh()
-						imgui.SetKeyboardFocusHere()
+						g.SetKeyboardFocusHere()
 					}
 				}),
 				g.DatePicker("##date", &programState.datePicker, 0, func() {
@@ -311,7 +311,7 @@ func loop() {
 						programState.addRowString = ""
 						programState.Refresh()
 					}
-					imgui.SetKeyboardFocusHere()
+					g.SetKeyboardFocusHere()
 				}),
 				g.SplitLayout("refsplit", g.DirectionVertical, true, 200,
 					getAllRowWidgets(),
