@@ -1,6 +1,6 @@
 module github.com/neutralinsomniac/exocortex
 
-go 1.15
+go 1.20
 
 require (
 	gioui.org v0.0.0-20210204101020-403f01655a36
