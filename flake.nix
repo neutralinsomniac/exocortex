@@ -30,6 +30,32 @@
 
           vendorHash = "sha256-+QZfW6WyhCsXGBBewjrtB8WfH14m/J5kxSytOOq/5xc=";
         };
+
+        devShell = pkgs.mkShell {
+          packages = with pkgs; [
+            libxcb
+            libxkbcommon
+            xorg.libX11
+            xorg.libX11.dev
+            xorg.xorgproto # Crucial: Includes X11/X.h and other headers
+            xorg.libXext
+            xorg.libXft
+            xorg.libXinerama
+            xorg.libXcursor
+            xorg.libXi
+            xorg.libXrender
+            xorg.libXrandr
+            xorg.libXfixes
+
+            wayland
+            wayland.dev
+
+            libGL.dev
+            pkg-config
+            xorg.libXxf86vm
+            gcc
+          ];
+        };
       }
     );
 }

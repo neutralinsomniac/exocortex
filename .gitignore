@@ -11,6 +11,12 @@
 # Output of the go coverage tool, specifically when used with LiteIDE
 *.out
 
+*.db
+
 # Dependency directories (remove the comment below to include it)
 # vendor/
 exocortex
+
+# nix
+/.direnv
+result
