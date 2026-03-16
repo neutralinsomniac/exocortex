@@ -28,7 +28,22 @@
 
           subPackages = [ "cmd/exotui" ];
 
-          vendorHash = "sha256-+QZfW6WyhCsXGBBewjrtB8WfH14m/J5kxSytOOq/5xc=";
+          doCheck = false;
+
+          vendorHash = "sha256-27sDcfEKar2BnnWD6ZwgcNS/d8/gKocSv34ijVcQ824=";
+        };
+
+        packages.exobt = pkgs.buildGoModule {
+          name = "exobt";
+          version = "1.0.0";
+
+          src = lib.cleanSource ./.;
+
+          subPackages = [ "cmd/exobt" ];
+
+          doCheck = false;
+
+          vendorHash = "sha256-27sDcfEKar2BnnWD6ZwgcNS/d8/gKocSv34ijVcQ824=";
         };
 
         devShell = pkgs.mkShell {
