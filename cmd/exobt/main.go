@@ -67,9 +67,11 @@ type undoEntry struct {
 	desc    string
 	tagID   int64
 	tagName string // used to recreate the tag if it was auto-deleted
-	undoFn  func(exoDB *db.ExoDB) error
-	redoFn  func(exoDB *db.ExoDB) error // nil = not redoable
+	// fns return the row ID that was created/modified (0 = no specific row, e.g. a deletion)
+	undoFn func(exoDB *db.ExoDB) (int64, error)
+	redoFn func(exoDB *db.ExoDB) (int64, error) // nil = not redoable
 }
+
 
 // ── model ────────────────────────────────────────────────────────────────────
 
@@ -280,7 +282,8 @@ func (m *model) applyUndo() {
 	l := len(m.undoStack)
 	entry := m.undoStack[l-1]
 	m.undoStack = m.undoStack[:l-1]
-	if err := entry.undoFn(m.dbState.ExoDB); err != nil {
+	rowID, err := entry.undoFn(m.dbState.ExoDB)
+	if err != nil {
 		m.setErr("undo failed: " + err.Error())
 		return
 	}
@@ -294,6 +297,7 @@ func (m *model) applyUndo() {
 	}
 	m.setStatus("undid: " + entry.desc)
 	m.refresh()
+	m.positionCursor(rowID)
 }
 
 func (m *model) applyRedo() {
@@ -304,7 +308,8 @@ func (m *model) applyRedo() {
 	l := len(m.redoStack)
 	entry := m.redoStack[l-1]
 	m.redoStack = m.redoStack[:l-1]
-	if err := entry.redoFn(m.dbState.ExoDB); err != nil {
+	rowID, err := entry.redoFn(m.dbState.ExoDB)
+	if err != nil {
 		m.setErr("redo failed: " + err.Error())
 		return
 	}
@@ -316,6 +321,20 @@ func (m *model) applyRedo() {
 	}
 	m.setStatus("redid: " + entry.desc)
 	m.refresh()
+	m.positionCursor(rowID)
+}
+
+// positionCursor moves the cursor to the row with the given ID, if present.
+func (m *model) positionCursor(rowID int64) {
+	if rowID == 0 {
+		return
+	}
+	for i, item := range m.rowItems {
+		if item.row.ID == rowID {
+			m.cursor = i
+			return
+		}
+	}
 }
 
 // resolveUndoTag returns the tag for an undo entry, recreating it via AddTag
@@ -427,20 +446,20 @@ func (m *model) handleEditorDone(msg editorDoneMsg) tea.Cmd {
 			desc:    "add row",
 			tagID:   tagID,
 			tagName: tagName,
-			undoFn: func(exoDB *db.ExoDB) error {
-				return exoDB.DeleteRowByID(latestID)
+			undoFn: func(exoDB *db.ExoDB) (int64, error) {
+				return 0, exoDB.DeleteRowByID(latestID)
 			},
-			redoFn: func(exoDB *db.ExoDB) error {
+			redoFn: func(exoDB *db.ExoDB) (int64, error) {
 				t, err := exoDB.AddTag(tagName)
 				if err != nil {
-					return err
+					return 0, err
 				}
 				newRow, err := exoDB.AddRow(t.ID, text, 0)
 				if err != nil {
-					return err
+					return 0, err
 				}
 				latestID = newRow.ID
-				return nil
+				return latestID, nil
 			},
 		})
 		m.status = ""
@@ -458,20 +477,20 @@ func (m *model) handleEditorDone(msg editorDoneMsg) tea.Cmd {
 			desc:    "insert row",
 			tagID:   tagID,
 			tagName: tagName,
-			undoFn: func(exoDB *db.ExoDB) error {
-				return exoDB.DeleteRowByID(latestID)
+			undoFn: func(exoDB *db.ExoDB) (int64, error) {
+				return 0, exoDB.DeleteRowByID(latestID)
 			},
-			redoFn: func(exoDB *db.ExoDB) error {
+			redoFn: func(exoDB *db.ExoDB) (int64, error) {
 				t, err := exoDB.AddTag(tagName)
 				if err != nil {
-					return err
+					return 0, err
 				}
 				newRow, err := exoDB.AddRow(t.ID, text, 0)
 				if err != nil {
-					return err
+					return 0, err
 				}
 				latestID = newRow.ID
-				return exoDB.UpdateRowRank(latestID, 0)
+				return latestID, exoDB.UpdateRowRank(latestID, 0)
 			},
 		})
 		m.status = ""
@@ -487,11 +506,11 @@ func (m *model) handleEditorDone(msg editorDoneMsg) tea.Cmd {
 			desc:    "edit row",
 			tagID:   editTagID,
 			tagName: editTagName,
-			undoFn: func(exoDB *db.ExoDB) error {
-				return exoDB.UpdateRowText(rowID, oldText)
+			undoFn: func(exoDB *db.ExoDB) (int64, error) {
+				return rowID, exoDB.UpdateRowText(rowID, oldText)
 			},
-			redoFn: func(exoDB *db.ExoDB) error {
-				return exoDB.UpdateRowText(rowID, newText)
+			redoFn: func(exoDB *db.ExoDB) (int64, error) {
+				return rowID, exoDB.UpdateRowText(rowID, newText)
 			},
 		})
 		m.status = ""
@@ -516,13 +535,13 @@ func (m *model) handleEditorDone(msg editorDoneMsg) tea.Cmd {
 		m.pushUndo(undoEntry{
 			desc:  "rename tag",
 			tagID: renameTagID,
-			undoFn: func(exoDB *db.ExoDB) error {
+			undoFn: func(exoDB *db.ExoDB) (int64, error) {
 				_, err := exoDB.RenameTag(newName, oldName)
-				return err
+				return 0, err
 			},
-			redoFn: func(exoDB *db.ExoDB) error {
+			redoFn: func(exoDB *db.ExoDB) (int64, error) {
 				_, err := exoDB.RenameTag(oldName, newName)
-				return err
+				return 0, err
 			},
 		})
 		m.status = ""
@@ -563,11 +582,11 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 			desc:    "move row up",
 			tagID:   m.dbState.CurrentDBTag.ID,
 			tagName: m.dbState.CurrentDBTag.Name,
-			undoFn: func(exoDB *db.ExoDB) error {
-				return exoDB.UpdateRowRank(rowID, fromRank)
+			undoFn: func(exoDB *db.ExoDB) (int64, error) {
+				return rowID, exoDB.UpdateRowRank(rowID, fromRank)
 			},
-			redoFn: func(exoDB *db.ExoDB) error {
-				return exoDB.UpdateRowRank(rowID, toRank)
+			redoFn: func(exoDB *db.ExoDB) (int64, error) {
+				return rowID, exoDB.UpdateRowRank(rowID, toRank)
 			},
 		})
 		m.cursor--
@@ -586,11 +605,11 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 			desc:    "move row down",
 			tagID:   m.dbState.CurrentDBTag.ID,
 			tagName: m.dbState.CurrentDBTag.Name,
-			undoFn: func(exoDB *db.ExoDB) error {
-				return exoDB.UpdateRowRank(rowID, fromRank)
+			undoFn: func(exoDB *db.ExoDB) (int64, error) {
+				return rowID, exoDB.UpdateRowRank(rowID, fromRank)
 			},
-			redoFn: func(exoDB *db.ExoDB) error {
-				return exoDB.UpdateRowRank(rowID, toRank)
+			redoFn: func(exoDB *db.ExoDB) (int64, error) {
+				return rowID, exoDB.UpdateRowRank(rowID, toRank)
 			},
 		})
 		m.cursor++
@@ -682,20 +701,20 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 			desc:    "cut row",
 			tagID:   rowTagID,
 			tagName: rowTagName,
-			undoFn: func(exoDB *db.ExoDB) error {
+			undoFn: func(exoDB *db.ExoDB) (int64, error) {
 				t, err := exoDB.AddTag(rowTagName)
 				if err != nil {
-					return err
+					return 0, err
 				}
 				newRow, err := exoDB.AddRow(t.ID, rowText, 0)
 				if err != nil {
-					return err
+					return 0, err
 				}
 				restoredID = newRow.ID
-				return exoDB.UpdateRowRank(newRow.ID, rowRank)
+				return restoredID, exoDB.UpdateRowRank(newRow.ID, rowRank)
 			},
-			redoFn: func(exoDB *db.ExoDB) error {
-				return exoDB.DeleteRowByID(restoredID)
+			redoFn: func(exoDB *db.ExoDB) (int64, error) {
+				return 0, exoDB.DeleteRowByID(restoredID)
 			},
 		})
 		m.setStatus("cut 1 row")
@@ -726,20 +745,20 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 			desc:    "paste row",
 			tagID:   tagID,
 			tagName: tagName,
-			undoFn: func(exoDB *db.ExoDB) error {
-				return exoDB.DeleteRowByID(latestPastedID)
+			undoFn: func(exoDB *db.ExoDB) (int64, error) {
+				return 0, exoDB.DeleteRowByID(latestPastedID)
 			},
-			redoFn: func(exoDB *db.ExoDB) error {
+			redoFn: func(exoDB *db.ExoDB) (int64, error) {
 				t, err := exoDB.AddTag(tagName)
 				if err != nil {
-					return err
+					return 0, err
 				}
 				r, err := exoDB.AddRow(t.ID, text, 0)
 				if err != nil {
-					return err
+					return 0, err
 				}
 				latestPastedID = r.ID
-				return nil
+				return latestPastedID, nil
 			},
 		})
 		m.snarfedRow = newRow
@@ -763,20 +782,20 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 			desc:    "paste row at start",
 			tagID:   tagID2,
 			tagName: tagName2,
-			undoFn: func(exoDB *db.ExoDB) error {
-				return exoDB.DeleteRowByID(latestPastedID2)
+			undoFn: func(exoDB *db.ExoDB) (int64, error) {
+				return 0, exoDB.DeleteRowByID(latestPastedID2)
 			},
-			redoFn: func(exoDB *db.ExoDB) error {
+			redoFn: func(exoDB *db.ExoDB) (int64, error) {
 				t, err := exoDB.AddTag(tagName2)
 				if err != nil {
-					return err
+					return 0, err
 				}
 				r, err := exoDB.AddRow(t.ID, text2, 0)
 				if err != nil {
-					return err
+					return 0, err
 				}
 				latestPastedID2 = r.ID
-				return exoDB.UpdateRowRank(latestPastedID2, 0)
+				return latestPastedID2, exoDB.UpdateRowRank(latestPastedID2, 0)
 			},
 		})
 		m.snarfedRow = newRow
