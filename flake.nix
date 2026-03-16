@@ -22,7 +22,7 @@
       {
         packages.exotui = pkgs.buildGoModule {
           name = "exotui";
-          version = "1.0.0";
+          version = "0.5.0";
 
           src = lib.cleanSource ./.;
 
@@ -35,7 +35,7 @@
 
         packages.exobt = pkgs.buildGoModule {
           name = "exobt";
-          version = "1.0.0";
+          version = "1.0.1";
 
           src = lib.cleanSource ./.;
 
