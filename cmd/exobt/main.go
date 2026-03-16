@@ -74,7 +74,6 @@ type undoEntry struct {
 // ── model ────────────────────────────────────────────────────────────────────
 
 type model struct {
-	exoDB   *db.ExoDB
 	dbState db.State
 
 	// display rows and shortcuts
@@ -125,7 +124,6 @@ func newModel(exoDB *db.ExoDB) model {
 	tagi.CharLimit = 200
 
 	m := model{
-		exoDB:           exoDB,
 		textInput:       ti,
 		tagInput:        tagi,
 		tagShortcuts:    make(map[db.Tag]int),
@@ -133,7 +131,7 @@ func newModel(exoDB *db.ExoDB) model {
 		tagNameToNum:    make(map[string]int),
 		allTagNames:     make(map[string]bool),
 	}
-	m.dbState.DB = exoDB
+	m.dbState.ExoDB = exoDB
 	m.goToToday()
 	return m
 }
@@ -174,7 +172,7 @@ func (m *model) rebuildRows() {
 			if _, seen := m.tagNameToNum[name]; seen {
 				continue
 			}
-			tag, err := m.exoDB.GetTagByName(name)
+			tag, err := m.dbState.GetTagByName(name)
 			if err == nil && tag.ID != 0 {
 				n := m.assignTagShortcut(tag)
 				m.tagNameToNum[name] = n
@@ -220,7 +218,7 @@ func (m *model) switchTag(tag db.Tag) {
 func (m *model) goToToday() { m.goToDate(time.Now()) }
 
 func (m *model) goToDate(t time.Time) {
-	tag, err := m.exoDB.AddTag(t.Format("January 02 2006"))
+	tag, err := m.dbState.AddTag(t.Format("January 02 2006"))
 	if err != nil {
 		m.setErr(err.Error())
 		return
@@ -238,7 +236,7 @@ func (m *model) popTag() {
 	name := m.tagStack[l-1]
 	m.tagStack = m.tagStack[:l-1]
 
-	tag, err := m.exoDB.AddTag(name)
+	tag, err := m.dbState.AddTag(name)
 	if err != nil {
 		m.setErr(err.Error())
 		return
@@ -282,7 +280,7 @@ func (m *model) applyUndo() {
 	l := len(m.undoStack)
 	entry := m.undoStack[l-1]
 	m.undoStack = m.undoStack[:l-1]
-	if err := entry.undoFn(m.exoDB); err != nil {
+	if err := entry.undoFn(m.dbState.ExoDB); err != nil {
 		m.setErr("undo failed: " + err.Error())
 		return
 	}
@@ -306,7 +304,7 @@ func (m *model) applyRedo() {
 	l := len(m.redoStack)
 	entry := m.redoStack[l-1]
 	m.redoStack = m.redoStack[:l-1]
-	if err := entry.redoFn(m.exoDB); err != nil {
+	if err := entry.redoFn(m.dbState.ExoDB); err != nil {
 		m.setErr("redo failed: " + err.Error())
 		return
 	}
@@ -324,12 +322,12 @@ func (m *model) applyRedo() {
 // if it was auto-deleted after becoming empty.
 func (m *model) resolveUndoTag(entry undoEntry) db.Tag {
 	if entry.tagID != 0 {
-		if tag, err := m.exoDB.GetTagByID(entry.tagID); err == nil && tag.ID != 0 {
+		if tag, err := m.dbState.GetTagByID(entry.tagID); err == nil && tag.ID != 0 {
 			return tag
 		}
 	}
 	if entry.tagName != "" {
-		if tag, err := m.exoDB.AddTag(entry.tagName); err == nil {
+		if tag, err := m.dbState.AddTag(entry.tagName); err == nil {
 			return tag
 		}
 	}
@@ -418,7 +416,7 @@ func (m *model) handleEditorDone(msg editorDoneMsg) tea.Cmd {
 	}
 	switch msg.action {
 	case actionAddRow:
-		row, err := m.exoDB.AddRow(m.dbState.CurrentDBTag.ID, msg.text, 0)
+		row, err := m.dbState.AddRow(m.dbState.CurrentDBTag.ID, msg.text, 0)
 		if err != nil {
 			m.setErr(err.Error())
 			return nil
@@ -448,12 +446,12 @@ func (m *model) handleEditorDone(msg editorDoneMsg) tea.Cmd {
 		m.status = ""
 		m.refresh()
 	case actionInsertRow:
-		row, err := m.exoDB.AddRow(m.dbState.CurrentDBTag.ID, msg.text, 0)
+		row, err := m.dbState.AddRow(m.dbState.CurrentDBTag.ID, msg.text, 0)
 		if err != nil {
 			m.setErr(err.Error())
 			return nil
 		}
-		_ = m.exoDB.UpdateRowRank(row.ID, 0)
+		_ = m.dbState.UpdateRowRank(row.ID, 0)
 		tagID, tagName, text := m.dbState.CurrentDBTag.ID, m.dbState.CurrentDBTag.Name, msg.text
 		var latestID int64 = row.ID
 		m.pushUndo(undoEntry{
@@ -480,7 +478,7 @@ func (m *model) handleEditorDone(msg editorDoneMsg) tea.Cmd {
 		m.refresh()
 	case actionEditRow:
 		oldText, newText, rowID := msg.row.Text, msg.text, msg.row.ID
-		if err := m.exoDB.UpdateRowText(rowID, newText); err != nil {
+		if err := m.dbState.UpdateRowText(rowID, newText); err != nil {
 			m.setErr(err.Error())
 			return nil
 		}
@@ -499,7 +497,7 @@ func (m *model) handleEditorDone(msg editorDoneMsg) tea.Cmd {
 		m.status = ""
 		m.refresh()
 	case actionNewTag:
-		tag, err := m.exoDB.AddTag(msg.text)
+		tag, err := m.dbState.AddTag(msg.text)
 		if err != nil {
 			m.setErr(err.Error())
 			return nil
@@ -509,7 +507,7 @@ func (m *model) handleEditorDone(msg editorDoneMsg) tea.Cmd {
 	case actionRenameTag:
 		oldName := m.dbState.CurrentDBTag.Name
 		newName := msg.text
-		tag, err := m.exoDB.RenameTag(oldName, newName)
+		tag, err := m.dbState.RenameTag(oldName, newName)
 		if err != nil {
 			m.setErr(err.Error())
 			return nil
@@ -560,7 +558,7 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 		}
 		row := m.rowItems[m.cursor].row
 		rowID, fromRank, toRank := row.ID, m.cursor, m.cursor-1
-		_ = m.exoDB.UpdateRowRank(rowID, toRank)
+		_ = m.dbState.UpdateRowRank(rowID, toRank)
 		m.pushUndo(undoEntry{
 			desc:    "move row up",
 			tagID:   m.dbState.CurrentDBTag.ID,
@@ -583,7 +581,7 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 		}
 		row := m.rowItems[m.cursor].row
 		rowID, fromRank, toRank := row.ID, m.cursor, next
-		_ = m.exoDB.UpdateRowRank(rowID, toRank)
+		_ = m.dbState.UpdateRowRank(rowID, toRank)
 		m.pushUndo(undoEntry{
 			desc:    "move row down",
 			tagID:   m.dbState.CurrentDBTag.ID,
@@ -620,7 +618,7 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 		case 0:
 			// no-op
 		case 1:
-			tag, err := m.exoDB.GetTagByName(matches[0][1])
+			tag, err := m.dbState.GetTagByName(matches[0][1])
 			if err == nil && tag.ID != 0 {
 				m.status = ""
 				m.switchTag(tag)
@@ -667,7 +665,7 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 		item := m.rowItems[m.cursor]
 		m.snarfedRow = item.row
 		m.hasSnarfed = true
-		if err := m.exoDB.DeleteRowByID(item.row.ID); err != nil {
+		if err := m.dbState.DeleteRowByID(item.row.ID); err != nil {
 			m.setErr(err.Error())
 			break
 		}
@@ -717,7 +715,7 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 			m.setErr("snarf buffer empty")
 			break
 		}
-		newRow, err := m.exoDB.AddRow(m.dbState.CurrentDBTag.ID, m.snarfedRow.Text, 0)
+		newRow, err := m.dbState.AddRow(m.dbState.CurrentDBTag.ID, m.snarfedRow.Text, 0)
 		if err != nil {
 			m.setErr(err.Error())
 			break
@@ -753,12 +751,12 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 			m.setErr("snarf buffer empty")
 			break
 		}
-		newRow, err := m.exoDB.AddRow(m.dbState.CurrentDBTag.ID, m.snarfedRow.Text, 0)
+		newRow, err := m.dbState.AddRow(m.dbState.CurrentDBTag.ID, m.snarfedRow.Text, 0)
 		if err != nil {
 			m.setErr(err.Error())
 			break
 		}
-		_ = m.exoDB.UpdateRowRank(newRow.ID, 0)
+		_ = m.dbState.UpdateRowRank(newRow.ID, 0)
 		tagID2, tagName2, text2 := m.dbState.CurrentDBTag.ID, m.dbState.CurrentDBTag.Name, m.snarfedRow.Text
 		var latestPastedID2 int64 = newRow.ID
 		m.pushUndo(undoEntry{
@@ -1218,8 +1216,8 @@ func (m model) viewCalendar() string {
 	// fetch rows for the selected day
 	dayLabel := m.calDate.Format("January 02 2006")
 	var dayRows []string
-	if tag, err := m.exoDB.GetTagByName(dayLabel); err == nil && tag.ID != 0 {
-		if rows, err := m.exoDB.GetRowsForTagID(tag.ID); err == nil {
+	if tag, err := m.dbState.GetTagByName(dayLabel); err == nil && tag.ID != 0 {
+		if rows, err := m.dbState.GetRowsForTagID(tag.ID); err == nil {
 			for _, r := range rows {
 				dayRows = append(dayRows, " • "+r.Text)
 			}

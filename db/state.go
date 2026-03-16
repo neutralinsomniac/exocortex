@@ -5,7 +5,7 @@ import (
 )
 
 type State struct {
-	DB                *ExoDB
+	*ExoDB
 	AllDBTags         []Tag
 	CurrentDBTag      Tag
 	CurrentDBRows     []Row
@@ -17,18 +17,18 @@ func (s *State) Refresh() error {
 	var err error
 	var i int
 
-	s.AllDBTags, err = s.DB.GetAllTags()
+	s.AllDBTags, err = s.GetAllTags()
 	if err != nil {
 		goto End
 	}
 
-	s.CurrentDBRows, err = s.DB.GetRowsForTagID(s.CurrentDBTag.ID)
+	s.CurrentDBRows, err = s.GetRowsForTagID(s.CurrentDBTag.ID)
 	if err != nil {
 		goto End
 	}
 
 	// refs
-	s.CurrentDBRefs, err = s.DB.GetRefsToTagByTagID(s.CurrentDBTag.ID)
+	s.CurrentDBRefs, err = s.GetRefsToTagByTagID(s.CurrentDBTag.ID)
 
 	// sorted ref keys
 	s.SortedRefTagsKeys = make([]Tag, len(s.CurrentDBRefs))
@@ -44,25 +44,3 @@ End:
 	return err
 }
 
-func (s *State) DeleteTagIfEmpty(id int64) error {
-	var rows []Row
-	var refs Refs
-	var err error
-
-	rows, err = s.DB.GetRowsForTagID(id)
-	if err != nil {
-		goto End
-	}
-
-	refs, err = s.DB.GetRefsToTagByTagID(id)
-	if err != nil {
-		goto End
-	}
-
-	if len(rows)+len(refs) == 0 {
-		err = s.DB.DeleteTagByID(id)
-	}
-
-End:
-	return err
-}

@@ -228,6 +228,36 @@ End:
 	return err
 }
 
+func (e *ExoDB) DeleteTagIfEmpty(id int64) error {
+	var tx *sql.Tx
+	var rows []Row
+	var refs Refs
+	var err error
+
+	tx, err = e.conn.Begin()
+	if err != nil {
+		goto End
+	}
+
+	rows, err = sqlGetRowsForTagID(tx, id)
+	if err != nil {
+		goto End
+	}
+
+	refs, err = sqlGetRefsToTagByTagID(tx, id)
+	if err != nil {
+		goto End
+	}
+
+	if len(rows)+len(refs) == 0 {
+		err = sqlDeleteTagByID(tx, id)
+	}
+
+End:
+	sqlCommitOrRollback(tx, err)
+	return err
+}
+
 func (e *ExoDB) DeleteTagByID(id int64) error {
 	var tx *sql.Tx
 	var err error
