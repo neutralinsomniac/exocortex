@@ -865,7 +865,11 @@ func (m *model) handleInputKey(msg tea.KeyMsg) tea.Cmd {
 				m.setErr("empty input")
 				return nil
 			default:
-				return openEditorCmd(m.pendingRow.Text, m.pendingAction, m.pendingRow)
+				initialText := m.pendingRow.Text
+			if m.pendingAction == actionAddRow || m.pendingAction == actionInsertRow {
+				initialText = ""
+			}
+			return openEditorCmd(initialText, m.pendingAction, m.pendingRow)
 			}
 		}
 		return m.handleEditorDone(editorDoneMsg{text: text, action: m.pendingAction, row: m.pendingRow})
