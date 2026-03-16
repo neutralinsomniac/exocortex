@@ -11,6 +11,11 @@
 # Output of the go coverage tool, specifically when used with LiteIDE
 *.out
 
+# exocortex stuff
+exotui
+exobt
+exogiu
+exogio
 *.db
 
 # Dependency directories (remove the comment below to include it)
