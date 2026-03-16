@@ -20,7 +20,7 @@ import (
 
 var (
 	styleHeader    = lipgloss.NewStyle().Bold(true)
-styleSelected  = lipgloss.NewStyle().Background(lipgloss.Color("240")).Foreground(lipgloss.Color("255"))
+	styleSelected  = lipgloss.NewStyle().Background(lipgloss.Color("240")).Foreground(lipgloss.Color("255"))
 	styleRefHeader = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("6"))
 	styleErr       = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
 	styleOK        = lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
@@ -72,7 +72,6 @@ type undoEntry struct {
 	redoFn func(exoDB *db.ExoDB) (int64, error) // nil = not redoable
 }
 
-
 // ── model ────────────────────────────────────────────────────────────────────
 
 type model struct {
@@ -85,11 +84,11 @@ type model struct {
 	tagNameToNum    map[string]int // fast lookup for rendering
 	allTagNames     map[string]bool
 
-	snarfedRow    db.Row
-	hasSnarfed    bool
-	tagStack    []string
-	undoStack   []undoEntry
-	redoStack   []undoEntry
+	snarfedRow db.Row
+	hasSnarfed bool
+	tagStack   []string
+	undoStack  []undoEntry
+	redoStack  []undoEntry
 
 	// navigation
 	cursor int
@@ -1300,7 +1299,7 @@ func (m model) viewHelp() string {
 		"   p / P      paste to end / beginning",
 		"   J / K      move row down / up",
 		"   u          undo last change",
-	"   U          redo last undone change",
+		"   U          redo last undone change",
 	}
 	content := fitLines(helpLines, lc-len(header), tw)
 
