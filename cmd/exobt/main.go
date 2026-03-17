@@ -21,6 +21,7 @@ import (
 var (
 	styleHeader    = lipgloss.NewStyle().Bold(true)
 	styleSelected  = lipgloss.NewStyle().Background(lipgloss.Color("240")).Foreground(lipgloss.Color("255"))
+	styleMarked    = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
 	styleRefHeader = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("6"))
 	styleErr       = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
 	styleOK        = lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
@@ -84,9 +85,10 @@ type model struct {
 	tagNameToNum    map[string]int // fast lookup for rendering
 	allTagNames     map[string]bool
 
-	snarfedRow db.Row
-	hasSnarfed bool
-	tagStack   []string
+	selectedRows map[int64]bool // row IDs in the multi-select set
+
+	snarfedRows []db.Row
+	tagStack    []string
 	undoStack  []undoEntry
 	redoStack  []undoEntry
 
@@ -131,6 +133,7 @@ func newModel(exoDB *db.ExoDB) model {
 		tagShortcutsRev: make(map[int]db.Tag),
 		tagNameToNum:    make(map[string]int),
 		allTagNames:     make(map[string]bool),
+		selectedRows:    make(map[int64]bool),
 	}
 	m.dbState.ExoDB = exoDB
 	m.goToToday()
@@ -213,6 +216,7 @@ func (m *model) switchTag(tag db.Tag) {
 	}
 	m.dbState.CurrentDBTag = tag
 	m.cursor = 0
+	m.selectedRows = make(map[int64]bool)
 	m.refresh()
 }
 
@@ -614,6 +618,24 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 		m.cursor++
 		m.refresh()
 
+	case " ":
+		if len(m.rowItems) == 0 || m.cursor >= len(m.rowItems) {
+			break
+		}
+		item := m.rowItems[m.cursor]
+		if item.isRef {
+			break
+		}
+		id := item.row.ID
+		if m.selectedRows[id] {
+			delete(m.selectedRows, id)
+		} else {
+			m.selectedRows[id] = true
+		}
+		if m.cursor < len(m.rowItems)-1 {
+			m.cursor++
+		}
+
 	case "g":
 		m.status = ""
 		m.goToToday()
@@ -680,43 +702,88 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 			m.setErr("no row selected")
 			break
 		}
-		item := m.rowItems[m.cursor]
-		m.snarfedRow = item.row
-		m.hasSnarfed = true
-		if err := m.dbState.DeleteRowByID(item.row.ID); err != nil {
-			m.setErr(err.Error())
-			break
+		// Collect items to cut: selection if non-empty, else cursor row.
+		var targets []rowItem
+		if len(m.selectedRows) > 0 {
+			for _, it := range m.rowItems {
+				if !it.isRef && m.selectedRows[it.row.ID] {
+					targets = append(targets, it)
+				}
+			}
 		}
-		// Ref rows belong to their source tag, not the currently viewed tag.
-		rowTagID := m.dbState.CurrentDBTag.ID
-		rowTagName := m.dbState.CurrentDBTag.Name
-		if item.isRef {
-			rowTagID = item.refTag.ID
-			rowTagName = item.refTag.Name
+		if len(targets) == 0 {
+			targets = []rowItem{m.rowItems[m.cursor]}
 		}
-		rowText, rowRank := item.row.Text, m.cursor
-		var restoredID int64
+		// Save info needed for undo before deleting.
+		type savedRow struct {
+			tagID   int64
+			tagName string
+			text    string
+			rank    int
+		}
+		var saved []savedRow
+		for idx, it := range targets {
+			tagID := m.dbState.CurrentDBTag.ID
+			tagName := m.dbState.CurrentDBTag.Name
+			if it.isRef {
+				tagID = it.refTag.ID
+				tagName = it.refTag.Name
+			}
+			// Rank approximation: position in rowItems minus ref rows before it.
+			rank := idx
+			for _, ri := range m.rowItems {
+				if ri.row.ID == it.row.ID {
+					break
+				}
+				if !ri.isRef {
+					rank++
+				}
+			}
+			saved = append(saved, savedRow{tagID, tagName, it.row.Text, rank})
+			if err := m.dbState.DeleteRowByID(it.row.ID); err != nil {
+				m.setErr(err.Error())
+				break
+			}
+		}
+		m.snarfedRows = nil
+		for _, t := range targets {
+			m.snarfedRows = append(m.snarfedRows, t.row)
+		}
+		// Single undo entry restores all deleted rows.
+		var restoredIDs []int64
 		m.pushUndo(undoEntry{
-			desc:    "cut row",
-			tagID:   rowTagID,
-			tagName: rowTagName,
+			desc:    fmt.Sprintf("cut %d row(s)", len(saved)),
+			tagID:   saved[0].tagID,
+			tagName: saved[0].tagName,
 			undoFn: func(exoDB *db.ExoDB) (int64, error) {
-				t, err := exoDB.AddTag(rowTagName)
-				if err != nil {
-					return 0, err
+				restoredIDs = restoredIDs[:0]
+				var lastID int64
+				for _, s := range saved {
+					t, err := exoDB.AddTag(s.tagName)
+					if err != nil {
+						return 0, err
+					}
+					newRow, err := exoDB.AddRow(t.ID, s.text, 0)
+					if err != nil {
+						return 0, err
+					}
+					_ = exoDB.UpdateRowRank(newRow.ID, s.rank)
+					restoredIDs = append(restoredIDs, newRow.ID)
+					lastID = newRow.ID
 				}
-				newRow, err := exoDB.AddRow(t.ID, rowText, 0)
-				if err != nil {
-					return 0, err
-				}
-				restoredID = newRow.ID
-				return restoredID, exoDB.UpdateRowRank(newRow.ID, rowRank)
+				return lastID, nil
 			},
 			redoFn: func(exoDB *db.ExoDB) (int64, error) {
-				return 0, exoDB.DeleteRowByID(restoredID)
+				for _, id := range restoredIDs {
+					if err := exoDB.DeleteRowByID(id); err != nil {
+						return 0, err
+					}
+				}
+				return 0, nil
 			},
 		})
-		m.setStatus("cut 1 row")
+		m.selectedRows = make(map[int64]bool)
+		m.setStatus(fmt.Sprintf("cut %d row(s)", len(saved)))
 		m.refresh()
 
 	case "D":
@@ -724,56 +791,97 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 			m.setErr("no row selected")
 			break
 		}
-		item := m.rowItems[m.cursor]
+		// Collect targets: selection if non-empty, else cursor row.
+		var dTargets []rowItem
+		if len(m.selectedRows) > 0 {
+			for _, it := range m.rowItems {
+				if !it.isRef && m.selectedRows[it.row.ID] {
+					dTargets = append(dTargets, it)
+				}
+			}
+		}
+		if len(dTargets) == 0 {
+			dTargets = []rowItem{m.rowItems[m.cursor]}
+		}
 		doneTag, err := m.dbState.AddTag("done")
 		if err != nil {
 			m.setErr(err.Error())
 			break
 		}
-		fromTagID := m.dbState.CurrentDBTag.ID
-		fromTagName := m.dbState.CurrentDBTag.Name
-		if item.isRef {
-			fromTagID = item.refTag.ID
-			fromTagName = item.refTag.Name
+		type doneRow struct {
+			rowID       int64
+			fromTagID   int64
+			fromTagName string
+			origText    string
+			newText     string
 		}
-		rowID := item.row.ID
-		origText := item.row.Text
-		newText := origText + " [[" + fromTagName + "]]"
-		toTagID := doneTag.ID
-		if err := m.dbState.MoveRowToTag(rowID, toTagID); err != nil {
-			m.setErr(err.Error())
-			break
+		var doneRows []doneRow
+		errored := false
+		for _, it := range dTargets {
+			fromTagID := m.dbState.CurrentDBTag.ID
+			fromTagName := m.dbState.CurrentDBTag.Name
+			if it.isRef {
+				fromTagID = it.refTag.ID
+				fromTagName = it.refTag.Name
+			}
+			origText := it.row.Text
+			newText := origText + " [[" + fromTagName + "]]"
+			if err := m.dbState.MoveRowToTag(it.row.ID, doneTag.ID); err != nil {
+				m.setErr(err.Error())
+				errored = true
+				break
+			}
+			if err := m.dbState.UpdateRowText(it.row.ID, newText); err != nil {
+				m.setErr(err.Error())
+				errored = true
+				break
+			}
+			doneRows = append(doneRows, doneRow{it.row.ID, fromTagID, fromTagName, origText, newText})
 		}
-		if err := m.dbState.UpdateRowText(rowID, newText); err != nil {
-			m.setErr(err.Error())
+		if errored {
 			break
 		}
 		m.pushUndo(undoEntry{
-			desc:    "move row to done",
-			tagID:   fromTagID,
-			tagName: fromTagName,
+			desc:    fmt.Sprintf("move %d row(s) to done", len(doneRows)),
+			tagID:   doneRows[0].fromTagID,
+			tagName: doneRows[0].fromTagName,
 			undoFn: func(exoDB *db.ExoDB) (int64, error) {
-				t, err := exoDB.AddTag(fromTagName)
-				if err != nil {
-					return 0, err
+				var lastID int64
+				for _, dr := range doneRows {
+					t, err := exoDB.AddTag(dr.fromTagName)
+					if err != nil {
+						return 0, err
+					}
+					if err := exoDB.MoveRowToTag(dr.rowID, t.ID); err != nil {
+						return 0, err
+					}
+					if err := exoDB.UpdateRowText(dr.rowID, dr.origText); err != nil {
+						return 0, err
+					}
+					lastID = dr.rowID
 				}
-				if err := exoDB.MoveRowToTag(rowID, t.ID); err != nil {
-					return 0, err
-				}
-				return rowID, exoDB.UpdateRowText(rowID, origText)
+				return lastID, nil
 			},
 			redoFn: func(exoDB *db.ExoDB) (int64, error) {
 				done, err := exoDB.AddTag("done")
 				if err != nil {
 					return 0, err
 				}
-				if err := exoDB.MoveRowToTag(rowID, done.ID); err != nil {
-					return 0, err
+				var lastID int64
+				for _, dr := range doneRows {
+					if err := exoDB.MoveRowToTag(dr.rowID, done.ID); err != nil {
+						return 0, err
+					}
+					if err := exoDB.UpdateRowText(dr.rowID, dr.newText); err != nil {
+						return 0, err
+					}
+					lastID = dr.rowID
 				}
-				return rowID, exoDB.UpdateRowText(rowID, newText)
+				return lastID, nil
 			},
 		})
-		m.setStatus("moved to [[done]]")
+		m.selectedRows = make(map[int64]bool)
+		m.setStatus(fmt.Sprintf("moved %d row(s) to [[done]]", len(doneRows)))
 		m.refresh()
 
 	case "y":
@@ -781,80 +889,133 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 			m.setErr("no row selected")
 			break
 		}
-		m.snarfedRow = m.rowItems[m.cursor].row
-		m.hasSnarfed = true
-		m.setStatus("yanked 1 row")
+		m.snarfedRows = nil
+		if len(m.selectedRows) > 0 {
+			for _, it := range m.rowItems {
+				if !it.isRef && m.selectedRows[it.row.ID] {
+					m.snarfedRows = append(m.snarfedRows, it.row)
+				}
+			}
+		}
+		if len(m.snarfedRows) == 0 {
+			m.snarfedRows = []db.Row{m.rowItems[m.cursor].row}
+		}
+		m.selectedRows = make(map[int64]bool)
+		m.setStatus(fmt.Sprintf("yanked %d row(s)", len(m.snarfedRows)))
 
 	case "p":
-		if !m.hasSnarfed {
+		if len(m.snarfedRows) == 0 {
 			m.setErr("snarf buffer empty")
 			break
 		}
-		newRow, err := m.dbState.AddRow(m.dbState.CurrentDBTag.ID, m.snarfedRow.Text, 0)
-		if err != nil {
-			m.setErr(err.Error())
+		tagID, tagName := m.dbState.CurrentDBTag.ID, m.dbState.CurrentDBTag.Name
+		texts := make([]string, len(m.snarfedRows))
+		for i, r := range m.snarfedRows {
+			texts[i] = r.Text
+		}
+		var pastedIDs []int64
+		errored := false
+		for _, text := range texts {
+			newRow, err := m.dbState.AddRow(tagID, text, 0)
+			if err != nil {
+				m.setErr(err.Error())
+				errored = true
+				break
+			}
+			pastedIDs = append(pastedIDs, newRow.ID)
+		}
+		if errored {
 			break
 		}
-		tagID, tagName, text := m.dbState.CurrentDBTag.ID, m.dbState.CurrentDBTag.Name, m.snarfedRow.Text
-		var latestPastedID int64 = newRow.ID
 		m.pushUndo(undoEntry{
-			desc:    "paste row",
+			desc:    fmt.Sprintf("paste %d row(s)", len(pastedIDs)),
 			tagID:   tagID,
 			tagName: tagName,
 			undoFn: func(exoDB *db.ExoDB) (int64, error) {
-				return 0, exoDB.DeleteRowByID(latestPastedID)
+				for _, id := range pastedIDs {
+					if err := exoDB.DeleteRowByID(id); err != nil {
+						return 0, err
+					}
+				}
+				return 0, nil
 			},
 			redoFn: func(exoDB *db.ExoDB) (int64, error) {
+				pastedIDs = pastedIDs[:0]
 				t, err := exoDB.AddTag(tagName)
 				if err != nil {
 					return 0, err
 				}
-				r, err := exoDB.AddRow(t.ID, text, 0)
-				if err != nil {
-					return 0, err
+				var lastID int64
+				for _, text := range texts {
+					r, err := exoDB.AddRow(t.ID, text, 0)
+					if err != nil {
+						return 0, err
+					}
+					pastedIDs = append(pastedIDs, r.ID)
+					lastID = r.ID
 				}
-				latestPastedID = r.ID
-				return latestPastedID, nil
+				return lastID, nil
 			},
 		})
-		m.snarfedRow = newRow
 		m.status = ""
 		m.refresh()
 
 	case "P":
-		if !m.hasSnarfed {
+		if len(m.snarfedRows) == 0 {
 			m.setErr("snarf buffer empty")
 			break
 		}
-		newRow, err := m.dbState.AddRow(m.dbState.CurrentDBTag.ID, m.snarfedRow.Text, 0)
-		if err != nil {
-			m.setErr(err.Error())
+		tagID2, tagName2 := m.dbState.CurrentDBTag.ID, m.dbState.CurrentDBTag.Name
+		texts2 := make([]string, len(m.snarfedRows))
+		for i, r := range m.snarfedRows {
+			texts2[i] = r.Text
+		}
+		// Insert in reverse order so that after all rank-0 inserts the
+		// original order is preserved (each insert pushes the rest down).
+		var pastedIDs2 []int64
+		errored2 := false
+		for i := len(texts2) - 1; i >= 0; i-- {
+			newRow, err := m.dbState.AddRow(tagID2, texts2[i], 0)
+			if err != nil {
+				m.setErr(err.Error())
+				errored2 = true
+				break
+			}
+			_ = m.dbState.UpdateRowRank(newRow.ID, 0)
+			pastedIDs2 = append(pastedIDs2, newRow.ID)
+		}
+		if errored2 {
 			break
 		}
-		_ = m.dbState.UpdateRowRank(newRow.ID, 0)
-		tagID2, tagName2, text2 := m.dbState.CurrentDBTag.ID, m.dbState.CurrentDBTag.Name, m.snarfedRow.Text
-		var latestPastedID2 int64 = newRow.ID
 		m.pushUndo(undoEntry{
-			desc:    "paste row at start",
+			desc:    fmt.Sprintf("paste %d row(s) at start", len(pastedIDs2)),
 			tagID:   tagID2,
 			tagName: tagName2,
 			undoFn: func(exoDB *db.ExoDB) (int64, error) {
-				return 0, exoDB.DeleteRowByID(latestPastedID2)
+				for _, id := range pastedIDs2 {
+					if err := exoDB.DeleteRowByID(id); err != nil {
+						return 0, err
+					}
+				}
+				return 0, nil
 			},
 			redoFn: func(exoDB *db.ExoDB) (int64, error) {
+				pastedIDs2 = pastedIDs2[:0]
 				t, err := exoDB.AddTag(tagName2)
 				if err != nil {
 					return 0, err
 				}
-				r, err := exoDB.AddRow(t.ID, text2, 0)
-				if err != nil {
-					return 0, err
+				for i := len(texts2) - 1; i >= 0; i-- {
+					r, err := exoDB.AddRow(t.ID, texts2[i], 0)
+					if err != nil {
+						return 0, err
+					}
+					_ = exoDB.UpdateRowRank(r.ID, 0)
+					pastedIDs2 = append(pastedIDs2, r.ID)
 				}
-				latestPastedID2 = r.ID
-				return latestPastedID2, exoDB.UpdateRowRank(latestPastedID2, 0)
+				return pastedIDs2[len(pastedIDs2)-1], nil
 			},
 		})
-		m.snarfedRow = newRow
 		m.status = ""
 		m.refresh()
 
@@ -1161,16 +1322,24 @@ func (m model) mainContentLines(innerW int) []string {
 		if item.isRef {
 			indent = "   "
 		}
+		marked := !item.isRef && m.selectedRows[item.row.ID]
 		var line string
 		if i == m.cursor {
-			prefix := styleSelected.Render(fmt.Sprintf("%s• ", indent))
+			var bullet string
+			if marked {
+				bullet = styleMarked.Render("◆") + " "
+			} else {
+				bullet = "• "
+			}
 			content := m.renderRowText(item.row.Text, "240")
-			raw := prefix + content
+			raw := indent + bullet + content
 			// pad to full width so the background extends to the right edge
 			if gap := innerW - ansi.StringWidth(raw); gap > 0 {
 				raw += styleSelected.Render(strings.Repeat(" ", gap))
 			}
 			line = raw
+		} else if marked {
+			line = fmt.Sprintf("%s%s %s", indent, styleMarked.Render("◆"), m.renderRowText(item.row.Text, ""))
 		} else {
 			line = fmt.Sprintf("%s• %s", indent, m.renderRowText(item.row.Text, ""))
 		}
@@ -1354,9 +1523,10 @@ func (m model) viewHelp() string {
 		"   enter      follow tag link in selected row",
 		"   a          add row to end",
 		"   A          insert row at beginning",
+		"   space       toggle row in/out of selection",
 		"   e          edit selected row",
-		"   d          cut selected row",
-		"   D          move selected row to [[done]]",
+		"   d          cut selected row (or all marked)",
+		"   D          move to [[done]] (or all marked)",
 		"   y          yank selected row",
 		"   p / P      paste to end / beginning",
 		"   J / K      move row down / up",
