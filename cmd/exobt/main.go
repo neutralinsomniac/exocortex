@@ -719,6 +719,63 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 		m.setStatus("cut 1 row")
 		m.refresh()
 
+	case "D":
+		if len(m.rowItems) == 0 {
+			m.setErr("no row selected")
+			break
+		}
+		item := m.rowItems[m.cursor]
+		doneTag, err := m.dbState.AddTag("done")
+		if err != nil {
+			m.setErr(err.Error())
+			break
+		}
+		fromTagID := m.dbState.CurrentDBTag.ID
+		fromTagName := m.dbState.CurrentDBTag.Name
+		if item.isRef {
+			fromTagID = item.refTag.ID
+			fromTagName = item.refTag.Name
+		}
+		rowID := item.row.ID
+		origText := item.row.Text
+		newText := origText + " [[" + fromTagName + "]]"
+		toTagID := doneTag.ID
+		if err := m.dbState.MoveRowToTag(rowID, toTagID); err != nil {
+			m.setErr(err.Error())
+			break
+		}
+		if err := m.dbState.UpdateRowText(rowID, newText); err != nil {
+			m.setErr(err.Error())
+			break
+		}
+		m.pushUndo(undoEntry{
+			desc:    "move row to done",
+			tagID:   fromTagID,
+			tagName: fromTagName,
+			undoFn: func(exoDB *db.ExoDB) (int64, error) {
+				t, err := exoDB.AddTag(fromTagName)
+				if err != nil {
+					return 0, err
+				}
+				if err := exoDB.MoveRowToTag(rowID, t.ID); err != nil {
+					return 0, err
+				}
+				return rowID, exoDB.UpdateRowText(rowID, origText)
+			},
+			redoFn: func(exoDB *db.ExoDB) (int64, error) {
+				done, err := exoDB.AddTag("done")
+				if err != nil {
+					return 0, err
+				}
+				if err := exoDB.MoveRowToTag(rowID, done.ID); err != nil {
+					return 0, err
+				}
+				return rowID, exoDB.UpdateRowText(rowID, newText)
+			},
+		})
+		m.setStatus("moved to [[done]]")
+		m.refresh()
+
 	case "y":
 		if len(m.rowItems) == 0 {
 			m.setErr("no row selected")
@@ -1299,6 +1356,7 @@ func (m model) viewHelp() string {
 		"   A          insert row at beginning",
 		"   e          edit selected row",
 		"   d          cut selected row",
+		"   D          move selected row to [[done]]",
 		"   y          yank selected row",
 		"   p / P      paste to end / beginning",
 		"   J / K      move row down / up",

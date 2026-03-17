@@ -319,6 +319,41 @@ End:
 	return err
 }
 
+func (e *ExoDB) MoveRowToTag(rowID int64, toTagID int64) error {
+	var tx *sql.Tx
+	var row Row
+	var err error
+
+	tx, err = e.conn.Begin()
+	if err != nil {
+		goto End
+	}
+
+	row, err = sqlGetRowByID(tx, rowID)
+	if err != nil {
+		goto End
+	}
+
+	_, err = tx.Exec("UPDATE row SET tag_id = ?, updated_ts = ? WHERE id = ?", toTagID, time.Now().UnixNano(), rowID)
+	if err != nil {
+		goto End
+	}
+
+	err = sqlUpdateTagTS(tx, row.TagID)
+	if err != nil {
+		goto End
+	}
+
+	err = sqlUpdateTagTS(tx, toTagID)
+	if err != nil {
+		goto End
+	}
+
+End:
+	sqlCommitOrRollback(tx, err)
+	return err
+}
+
 func (e *ExoDB) UpdateRowRank(rowID int64, rank int) error {
 	var tx *sql.Tx
 	var row Row
