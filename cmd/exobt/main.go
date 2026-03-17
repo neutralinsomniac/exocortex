@@ -100,6 +100,7 @@ type model struct {
 	textInput     textinput.Model
 	pendingAction pendingAction
 	pendingRow    db.Row
+	pendingRank   int // rank at which the pending add/insert should land
 
 	// tag select mode
 	tagInput     textinput.Model
@@ -190,6 +191,22 @@ func (m *model) rebuildRows() {
 	if m.cursor < 0 {
 		m.cursor = 0
 	}
+}
+
+// afterCursorRank returns the rank at which a new row should be inserted so
+// that it appears immediately after the cursor. When the cursor is on a ref
+// row (or the list is empty) the row is appended after all direct rows.
+func (m *model) afterCursorRank() int {
+	if m.cursor < len(m.rowItems) && !m.rowItems[m.cursor].isRef {
+		return m.cursor + 1
+	}
+	n := 0
+	for _, it := range m.rowItems {
+		if !it.isRef {
+			n++
+		}
+	}
+	return n
 }
 
 func (m *model) assignTagShortcut(tag db.Tag) int {
@@ -443,6 +460,8 @@ func (m *model) handleEditorDone(msg editorDoneMsg) tea.Cmd {
 			m.setErr(err.Error())
 			return nil
 		}
+		rank := m.pendingRank
+		_ = m.dbState.UpdateRowRank(row.ID, rank)
 		tagID, tagName, text := m.dbState.CurrentDBTag.ID, m.dbState.CurrentDBTag.Name, msg.text
 		var latestID int64 = row.ID
 		m.pushUndo(undoEntry{
@@ -462,7 +481,7 @@ func (m *model) handleEditorDone(msg editorDoneMsg) tea.Cmd {
 					return 0, err
 				}
 				latestID = newRow.ID
-				return latestID, nil
+				return latestID, exoDB.UpdateRowRank(latestID, rank)
 			},
 		})
 		m.status = ""
@@ -670,6 +689,7 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 	case "a":
 		m.mode = modeInput
 		m.pendingAction = actionAddRow
+		m.pendingRank = m.afterCursorRank()
 		m.textInput.SetValue("")
 		m.textInput.Placeholder = "row text (empty = open $EDITOR)"
 		m.textInput.Focus()
@@ -913,15 +933,17 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 		for i, r := range m.snarfedRows {
 			texts[i] = r.Text
 		}
+		baseRank := m.afterCursorRank()
 		var pastedIDs []int64
 		errored := false
-		for _, text := range texts {
+		for i, text := range texts {
 			newRow, err := m.dbState.AddRow(tagID, text, 0)
 			if err != nil {
 				m.setErr(err.Error())
 				errored = true
 				break
 			}
+			_ = m.dbState.UpdateRowRank(newRow.ID, baseRank+i)
 			pastedIDs = append(pastedIDs, newRow.ID)
 		}
 		if errored {
@@ -946,11 +968,12 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 					return 0, err
 				}
 				var lastID int64
-				for _, text := range texts {
+				for i, text := range texts {
 					r, err := exoDB.AddRow(t.ID, text, 0)
 					if err != nil {
 						return 0, err
 					}
+					_ = exoDB.UpdateRowRank(r.ID, baseRank+i)
 					pastedIDs = append(pastedIDs, r.ID)
 					lastID = r.ID
 				}
