@@ -13,6 +13,7 @@ type Row struct {
 	Text        string
 	ParentRowID int64
 	UpdatedTS   int64
+	Note        string
 }
 
 func sqlGetRowByID(tx *sql.Tx, id int64) (Row, error) {
@@ -20,9 +21,9 @@ func sqlGetRowByID(tx *sql.Tx, id int64) (Row, error) {
 	var sqlRow *sql.Row
 	var err error
 
-	sqlRow = tx.QueryRow("SELECT id, tag_id, text, rank, parent_row_id, updated_ts FROM row WHERE id = $1", id)
+	sqlRow = tx.QueryRow("SELECT id, tag_id, text, rank, parent_row_id, updated_ts, note FROM row WHERE id = $1", id)
 
-	err = sqlRow.Scan(&row.ID, &row.TagID, &row.Text, &row.Rank, &row.ParentRowID, &row.UpdatedTS)
+	err = sqlRow.Scan(&row.ID, &row.TagID, &row.Text, &row.Rank, &row.ParentRowID, &row.UpdatedTS, &row.Note)
 	if err != nil {
 		goto End
 	}
@@ -93,7 +94,7 @@ func sqlGetRowsForTagID(tx *sql.Tx, tagID int64) ([]Row, error) {
 	var sqlRows *sql.Rows
 	var err error
 
-	sqlRows, err = tx.Query("SELECT id, tag_id, rank, text, parent_row_id, updated_ts FROM row WHERE tag_id = $1 ORDER BY rank, id", tagID)
+	sqlRows, err = tx.Query("SELECT id, tag_id, rank, text, parent_row_id, updated_ts, note FROM row WHERE tag_id = $1 ORDER BY rank, id", tagID)
 	if err != nil {
 		goto End
 	}
@@ -101,7 +102,7 @@ func sqlGetRowsForTagID(tx *sql.Tx, tagID int64) ([]Row, error) {
 
 	for sqlRows.Next() {
 		var row Row
-		err = sqlRows.Scan(&row.ID, &row.TagID, &row.Rank, &row.Text, &row.ParentRowID, &row.UpdatedTS)
+		err = sqlRows.Scan(&row.ID, &row.TagID, &row.Rank, &row.Text, &row.ParentRowID, &row.UpdatedTS, &row.Note)
 		if err != nil {
 			goto End
 		}
@@ -400,6 +401,25 @@ func (e *ExoDB) UpdateRowRank(rowID int64, rank int) error {
 			newRank++
 		}
 
+	}
+
+End:
+	sqlCommitOrRollback(tx, err)
+	return err
+}
+
+func (e *ExoDB) UpdateRowNote(rowID int64, note string) error {
+	var tx *sql.Tx
+	var err error
+
+	tx, err = e.conn.Begin()
+	if err != nil {
+		goto End
+	}
+
+	_, err = tx.Exec("UPDATE row SET note = ?, updated_ts = ? WHERE id = ?", note, time.Now().UnixNano(), rowID)
+	if err != nil {
+		goto End
 	}
 
 End:

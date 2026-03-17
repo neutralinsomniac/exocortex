@@ -21,7 +21,7 @@ import (
 var (
 	styleHeader    = lipgloss.NewStyle().Bold(true)
 	styleSelected  = lipgloss.NewStyle().Background(lipgloss.Color("240")).Foreground(lipgloss.Color("255"))
-	styleMarked    = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
+	styleMarked = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
 	styleRefHeader = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("6"))
 	styleErr       = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
 	styleOK        = lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
@@ -49,6 +49,7 @@ const (
 	actionNewTag
 	actionRenameTag
 	actionEditRow
+	actionEditNote
 )
 
 type rowItem struct {
@@ -449,7 +450,7 @@ func (m *model) handleEditorDone(msg editorDoneMsg) tea.Cmd {
 		m.setErr("editor error: " + msg.err.Error())
 		return nil
 	}
-	if msg.text == "" {
+	if msg.text == "" && msg.action != actionEditNote {
 		m.setErr("empty input")
 		return nil
 	}
@@ -513,6 +514,26 @@ func (m *model) handleEditorDone(msg editorDoneMsg) tea.Cmd {
 				}
 				latestID = newRow.ID
 				return latestID, exoDB.UpdateRowRank(latestID, 0)
+			},
+		})
+		m.status = ""
+		m.refresh()
+	case actionEditNote:
+		oldNote, newNote, rowID := msg.row.Note, msg.text, msg.row.ID
+		if err := m.dbState.UpdateRowNote(rowID, newNote); err != nil {
+			m.setErr(err.Error())
+			return nil
+		}
+		noteTagID, noteTagName := m.dbState.CurrentDBTag.ID, m.dbState.CurrentDBTag.Name
+		m.pushUndo(undoEntry{
+			desc:    "edit note",
+			tagID:   noteTagID,
+			tagName: noteTagName,
+			undoFn: func(exoDB *db.ExoDB) (int64, error) {
+				return rowID, exoDB.UpdateRowNote(rowID, oldNote)
+			},
+			redoFn: func(exoDB *db.ExoDB) (int64, error) {
+				return rowID, exoDB.UpdateRowNote(rowID, newNote)
 			},
 		})
 		m.status = ""
@@ -717,6 +738,16 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 		m.textInput.Focus()
 		return textinput.Blink
 
+	case "N":
+		if len(m.rowItems) == 0 || m.cursor >= len(m.rowItems) {
+			break
+		}
+		item := m.rowItems[m.cursor]
+		if item.isRef {
+			break
+		}
+		return openEditorCmd(item.row.Note, actionEditNote, item.row)
+
 	case "d":
 		if len(m.rowItems) == 0 {
 			m.setErr("no row selected")
@@ -739,6 +770,7 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 			tagID   int64
 			tagName string
 			text    string
+			note    string
 			rank    int
 		}
 		var saved []savedRow
@@ -759,7 +791,7 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 					rank++
 				}
 			}
-			saved = append(saved, savedRow{tagID, tagName, it.row.Text, rank})
+			saved = append(saved, savedRow{tagID, tagName, it.row.Text, it.row.Note, rank})
 			if err := m.dbState.DeleteRowByID(it.row.ID); err != nil {
 				m.setErr(err.Error())
 				break
@@ -788,6 +820,9 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 						return 0, err
 					}
 					_ = exoDB.UpdateRowRank(newRow.ID, s.rank)
+					if s.note != "" {
+						_ = exoDB.UpdateRowNote(newRow.ID, s.note)
+					}
 					restoredIDs = append(restoredIDs, newRow.ID)
 					lastID = newRow.ID
 				}
@@ -930,8 +965,10 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 		}
 		tagID, tagName := m.dbState.CurrentDBTag.ID, m.dbState.CurrentDBTag.Name
 		texts := make([]string, len(m.snarfedRows))
+		notes := make([]string, len(m.snarfedRows))
 		for i, r := range m.snarfedRows {
 			texts[i] = r.Text
+			notes[i] = r.Note
 		}
 		baseRank := m.afterCursorRank()
 		var pastedIDs []int64
@@ -944,6 +981,9 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 				break
 			}
 			_ = m.dbState.UpdateRowRank(newRow.ID, baseRank+i)
+			if notes[i] != "" {
+				_ = m.dbState.UpdateRowNote(newRow.ID, notes[i])
+			}
 			pastedIDs = append(pastedIDs, newRow.ID)
 		}
 		if errored {
@@ -974,6 +1014,9 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 						return 0, err
 					}
 					_ = exoDB.UpdateRowRank(r.ID, baseRank+i)
+					if notes[i] != "" {
+						_ = exoDB.UpdateRowNote(r.ID, notes[i])
+					}
 					pastedIDs = append(pastedIDs, r.ID)
 					lastID = r.ID
 				}
@@ -990,8 +1033,10 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 		}
 		tagID2, tagName2 := m.dbState.CurrentDBTag.ID, m.dbState.CurrentDBTag.Name
 		texts2 := make([]string, len(m.snarfedRows))
+		notes2 := make([]string, len(m.snarfedRows))
 		for i, r := range m.snarfedRows {
 			texts2[i] = r.Text
+			notes2[i] = r.Note
 		}
 		// Insert in reverse order so that after all rank-0 inserts the
 		// original order is preserved (each insert pushes the rest down).
@@ -1005,6 +1050,9 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 				break
 			}
 			_ = m.dbState.UpdateRowRank(newRow.ID, 0)
+			if notes2[i] != "" {
+				_ = m.dbState.UpdateRowNote(newRow.ID, notes2[i])
+			}
 			pastedIDs2 = append(pastedIDs2, newRow.ID)
 		}
 		if errored2 {
@@ -1034,6 +1082,9 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 						return 0, err
 					}
 					_ = exoDB.UpdateRowRank(r.ID, 0)
+					if notes2[i] != "" {
+						_ = exoDB.UpdateRowNote(r.ID, notes2[i])
+					}
 					pastedIDs2 = append(pastedIDs2, r.ID)
 				}
 				return pastedIDs2[len(pastedIDs2)-1], nil
@@ -1346,6 +1397,7 @@ func (m model) mainContentLines(innerW int) []string {
 			indent = "   "
 		}
 		marked := !item.isRef && m.selectedRows[item.row.ID]
+		hasNote := !item.isRef && item.row.Note != ""
 		var line string
 		if i == m.cursor {
 			var bullet string
@@ -1354,17 +1406,29 @@ func (m model) mainContentLines(innerW int) []string {
 			} else {
 				bullet = "• "
 			}
+			noteSuffix := ""
+			if hasNote {
+				noteSuffix = styleSelected.Render(" ") + styleDim.Background(lipgloss.Color("240")).Render("✎")
+			}
 			content := m.renderRowText(item.row.Text, "240")
-			raw := indent + bullet + content
+			raw := indent + bullet + content + noteSuffix
 			// pad to full width so the background extends to the right edge
 			if gap := innerW - ansi.StringWidth(raw); gap > 0 {
 				raw += styleSelected.Render(strings.Repeat(" ", gap))
 			}
 			line = raw
 		} else if marked {
-			line = fmt.Sprintf("%s%s %s", indent, styleMarked.Render("◆"), m.renderRowText(item.row.Text, ""))
+			noteSuffix := ""
+			if hasNote {
+				noteSuffix = " " + styleDim.Render("✎")
+			}
+			line = fmt.Sprintf("%s%s %s%s", indent, styleMarked.Render("◆"), m.renderRowText(item.row.Text, ""), noteSuffix)
 		} else {
-			line = fmt.Sprintf("%s• %s", indent, m.renderRowText(item.row.Text, ""))
+			noteSuffix := ""
+			if hasNote {
+				noteSuffix = " " + styleDim.Render("✎")
+			}
+			line = fmt.Sprintf("%s• %s%s", indent, m.renderRowText(item.row.Text, ""), noteSuffix)
 		}
 		lines = append(lines, line)
 	}
@@ -1548,6 +1612,7 @@ func (m model) viewHelp() string {
 		"   A          insert row at beginning",
 		"   space       toggle row in/out of selection",
 		"   e          edit selected row",
+		"   N          add/edit note on selected row",
 		"   d          cut selected row (or all marked)",
 		"   D          move to [[done]] (or all marked)",
 		"   y          yank selected row",
@@ -1576,6 +1641,11 @@ func main() {
 
 	if err := exoDB.LoadSchema(); err != nil {
 		fmt.Fprintln(os.Stderr, "load schema:", err)
+		os.Exit(1)
+	}
+
+	if err := exoDB.Migrate(); err != nil {
+		fmt.Fprintln(os.Stderr, "migrate:", err)
 		os.Exit(1)
 	}
 

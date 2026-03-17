@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"strings"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -14,6 +15,21 @@ type ExoDB struct {
 func (e *ExoDB) LoadSchema() error {
 	_, err := e.conn.Exec(schema)
 	return err
+}
+
+// Migrate applies incremental schema changes to existing databases.
+func (e *ExoDB) Migrate() error {
+	migrations := []string{
+		`ALTER TABLE row ADD COLUMN note TEXT NOT NULL DEFAULT ''`,
+	}
+	for _, m := range migrations {
+		if _, err := e.conn.Exec(m); err != nil {
+			if !strings.Contains(err.Error(), "duplicate column name") {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func (e *ExoDB) Open(filename string) error {

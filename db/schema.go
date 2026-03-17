@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS "row" (
 	"text"	BLOB,
 	"parent_row_id"	INTEGER,
 	"updated_ts"	INTEGER,
+	"note"	TEXT NOT NULL DEFAULT '',
 	FOREIGN KEY("tag_id") REFERENCES "tag"("id") ON DELETE CASCADE,
 	PRIMARY KEY("id")
 );
