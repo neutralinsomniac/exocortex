@@ -716,7 +716,20 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 		if len(m.rowItems) == 0 || m.cursor >= len(m.rowItems) {
 			break
 		}
-		matches := tagRe.FindAllStringSubmatch(m.rowItems[m.cursor].row.Text, -1)
+		item := m.rowItems[m.cursor]
+		if item.isRef {
+			rowID := item.row.ID
+			m.status = ""
+			m.switchTag(item.refTag)
+			for i, ri := range m.rowItems {
+				if ri.row.ID == rowID {
+					m.cursor = i
+					break
+				}
+			}
+			break
+		}
+		matches := tagRe.FindAllStringSubmatch(item.row.Text, -1)
 		switch len(matches) {
 		case 0:
 			// no-op
