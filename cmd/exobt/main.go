@@ -95,8 +95,8 @@ type model struct {
 
 	snarfedRows []db.Row
 	tagStack    []tagStackEntry
-	undoStack  []undoEntry
-	redoStack  []undoEntry
+	undoStack   []undoEntry
+	redoStack   []undoEntry
 
 	// navigation
 	cursor int
@@ -217,10 +217,7 @@ func (m *model) rebuildRows() {
 func (m *model) setInputWidth() {
 	const escHint = "  esc to cancel"
 	prompt := inputPrompts[m.pendingAction] + ": "
-	w := m.textW() - 1 - ansi.StringWidth(prompt) - ansi.StringWidth(escHint)
-	if w < 1 {
-		w = 1
-	}
+	w := max(m.textW()-1-ansi.StringWidth(prompt)-ansi.StringWidth(escHint), 1)
 	m.textInput.Width = w
 }
 
@@ -1272,10 +1269,10 @@ func (m *model) handleInputKey(msg tea.KeyMsg) tea.Cmd {
 				return nil
 			default:
 				initialText := m.pendingRow.Text
-			if m.pendingAction == actionAddRow || m.pendingAction == actionInsertRow {
-				initialText = ""
-			}
-			return openEditorCmd(initialText, m.pendingAction, m.pendingRow)
+				if m.pendingAction == actionAddRow || m.pendingAction == actionInsertRow {
+					initialText = ""
+				}
+				return openEditorCmd(initialText, m.pendingAction, m.pendingRow)
 			}
 		}
 		return m.handleEditorDone(editorDoneMsg{text: text, action: m.pendingAction, row: m.pendingRow})
@@ -1388,10 +1385,9 @@ func rule(w int, label string) string {
 	if label == "" {
 		return styleDim.Render(strings.Repeat("─", w))
 	}
-	pad := w - len(label) - 4 // 4 = "─ " prefix + " ─..." suffix chars
-	if pad < 0 {
-		pad = 0
-	}
+	pad := max(
+		// 4 = "─ " prefix + " ─..." suffix chars
+		w-len(label)-4, 0)
 	return styleDim.Render("─ " + label + " " + strings.Repeat("─", pad))
 }
 
@@ -1554,10 +1550,7 @@ func (m model) mainContentLines(innerW int) []string {
 		if hasNote {
 			noteSuffixW = 2 // " ✎"
 		}
-		textW := innerW - prefixW - noteSuffixW
-		if textW < 1 {
-			textW = 1
-		}
+		textW := max(innerW-prefixW-noteSuffixW, 1)
 		chunks := wrapText(item.row.Text, textW)
 
 		if i == m.cursor {
