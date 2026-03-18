@@ -120,6 +120,14 @@ type model struct {
 
 var tagRe = regexp.MustCompile(`\[\[(.*?)\]\]`)
 
+var inputPrompts = map[pendingAction]string{
+	actionAddRow:    "Add row",
+	actionInsertRow: "Insert row",
+	actionNewTag:    "New tag",
+	actionRenameTag: "Rename tag",
+	actionEditRow:   "Edit row",
+}
+
 func newModel(exoDB *db.ExoDB) model {
 	ti := textinput.New()
 	ti.CharLimit = 1024
@@ -192,6 +200,18 @@ func (m *model) rebuildRows() {
 	if m.cursor < 0 {
 		m.cursor = 0
 	}
+}
+
+// setInputWidth keeps m.textInput.Width in sync with the terminal width so
+// the input scrolls correctly while typing.
+func (m *model) setInputWidth() {
+	const escHint = "  esc to cancel"
+	prompt := inputPrompts[m.pendingAction] + ": "
+	w := m.textW() - 1 - ansi.StringWidth(prompt) - ansi.StringWidth(escHint)
+	if w < 1 {
+		w = 1
+	}
+	m.textInput.Width = w
 }
 
 // afterCursorRank returns the rank at which a new row should be inserted so
@@ -426,6 +446,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+		if m.mode == modeInput {
+			m.setInputWidth()
+		}
 	case editorDoneMsg:
 		cmd = m.handleEditorDone(msg)
 	case tea.KeyMsg:
@@ -711,6 +734,7 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 		m.mode = modeInput
 		m.pendingAction = actionAddRow
 		m.pendingRank = m.afterCursorRank()
+		m.setInputWidth()
 		m.textInput.SetValue("")
 		m.textInput.Placeholder = "row text (empty = open $EDITOR)"
 		m.textInput.Focus()
@@ -719,6 +743,7 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 	case "A":
 		m.mode = modeInput
 		m.pendingAction = actionInsertRow
+		m.setInputWidth()
 		m.textInput.SetValue("")
 		m.textInput.Placeholder = "row text (empty = open $EDITOR)"
 		m.textInput.Focus()
@@ -732,6 +757,7 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 		m.pendingRow = m.rowItems[m.cursor].row
 		m.mode = modeInput
 		m.pendingAction = actionEditRow
+		m.setInputWidth()
 		m.textInput.SetValue(m.pendingRow.Text)
 		m.textInput.CursorEnd()
 		m.textInput.Placeholder = "edit text (empty = open $EDITOR)"
@@ -1096,6 +1122,7 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 	case "n":
 		m.mode = modeInput
 		m.pendingAction = actionNewTag
+		m.setInputWidth()
 		m.textInput.SetValue("")
 		m.textInput.Placeholder = "new tag name"
 		m.textInput.Focus()
@@ -1104,6 +1131,7 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 	case "r":
 		m.mode = modeInput
 		m.pendingAction = actionRenameTag
+		m.setInputWidth()
 		m.textInput.SetValue(m.dbState.CurrentDBTag.Name)
 		m.textInput.Placeholder = "rename tag"
 		m.textInput.Focus()
@@ -1533,14 +1561,8 @@ func (m model) viewInput() string {
 		boxContent(header, content, tw),
 	)
 
-	prompts := map[pendingAction]string{
-		actionAddRow:    "Add row",
-		actionInsertRow: "Insert row",
-		actionNewTag:    "New tag",
-		actionRenameTag: "Rename tag",
-		actionEditRow:   "Edit row",
-	}
-	inputLine := " " + styleKey.Render(prompts[m.pendingAction]+": ") +
+	prompt := inputPrompts[m.pendingAction] + ": "
+	inputLine := " " + styleKey.Render(prompt) +
 		m.textInput.View() +
 		styleDim.Render("  esc to cancel")
 
