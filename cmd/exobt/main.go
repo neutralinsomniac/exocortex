@@ -1374,6 +1374,39 @@ func (m model) renderRowText(text string, bg string) string {
 	return sb.String()
 }
 
+// wrapText splits text into lines of at most width display columns, breaking
+// on word boundaries. A word longer than width is kept on its own line.
+func wrapText(text string, width int) []string {
+	if width <= 0 {
+		return []string{text}
+	}
+	words := strings.Fields(text)
+	if len(words) == 0 {
+		return []string{""}
+	}
+	var lines []string
+	cur := ""
+	curW := 0
+	for _, word := range words {
+		ww := ansi.StringWidth(word)
+		if curW == 0 {
+			cur = word
+			curW = ww
+		} else if curW+1+ww <= width {
+			cur += " " + word
+			curW += 1 + ww
+		} else {
+			lines = append(lines, cur)
+			cur = word
+			curW = ww
+		}
+	}
+	if cur != "" {
+		lines = append(lines, cur)
+	}
+	return lines
+}
+
 // mainContentLines builds the row/ref lines for the main content area.
 func (m model) mainContentLines(innerW int) []string {
 	var lines []string
@@ -1398,7 +1431,20 @@ func (m model) mainContentLines(innerW int) []string {
 		}
 		marked := !item.isRef && m.selectedRows[item.row.ID]
 		hasNote := !item.isRef && item.row.Note != ""
-		var line string
+
+		// Calculate widths for wrapping.
+		prefixW := ansi.StringWidth(indent) + 2 // bullet is always 2 display cols
+		contIndent := strings.Repeat(" ", prefixW)
+		noteSuffixW := 0
+		if hasNote {
+			noteSuffixW = 2 // " ✎"
+		}
+		textW := innerW - prefixW - noteSuffixW
+		if textW < 1 {
+			textW = 1
+		}
+		chunks := wrapText(item.row.Text, textW)
+
 		if i == m.cursor {
 			var bullet string
 			if marked {
@@ -1406,31 +1452,53 @@ func (m model) mainContentLines(innerW int) []string {
 			} else {
 				bullet = "• "
 			}
-			noteSuffix := ""
-			if hasNote {
-				noteSuffix = styleSelected.Render(" ") + styleDim.Background(lipgloss.Color("240")).Render("✎")
+			for ci, chunk := range chunks {
+				isLast := ci == len(chunks)-1
+				pfx := contIndent
+				if ci == 0 {
+					pfx = indent + bullet
+				}
+				noteSuffix := ""
+				if isLast && hasNote {
+					noteSuffix = styleSelected.Render(" ") + styleDim.Background(lipgloss.Color("240")).Render("✎")
+				}
+				raw := pfx + m.renderRowText(chunk, "240") + noteSuffix
+				if gap := innerW - ansi.StringWidth(raw); gap > 0 {
+					raw += styleSelected.Render(strings.Repeat(" ", gap))
+				}
+				lines = append(lines, raw)
 			}
-			content := m.renderRowText(item.row.Text, "240")
-			raw := indent + bullet + content + noteSuffix
-			// pad to full width so the background extends to the right edge
-			if gap := innerW - ansi.StringWidth(raw); gap > 0 {
-				raw += styleSelected.Render(strings.Repeat(" ", gap))
-			}
-			line = raw
 		} else if marked {
-			noteSuffix := ""
-			if hasNote {
-				noteSuffix = " " + styleDim.Render("✎")
+			for ci, chunk := range chunks {
+				isLast := ci == len(chunks)-1
+				noteSuffix := ""
+				if isLast && hasNote {
+					noteSuffix = " " + styleDim.Render("✎")
+				}
+				pfx := contIndent
+				bullet := " "
+				if ci == 0 {
+					pfx = indent
+					bullet = styleMarked.Render("◆")
+				}
+				lines = append(lines, pfx+bullet+" "+m.renderRowText(chunk, "")+noteSuffix)
 			}
-			line = fmt.Sprintf("%s%s %s%s", indent, styleMarked.Render("◆"), m.renderRowText(item.row.Text, ""), noteSuffix)
 		} else {
-			noteSuffix := ""
-			if hasNote {
-				noteSuffix = " " + styleDim.Render("✎")
+			for ci, chunk := range chunks {
+				isLast := ci == len(chunks)-1
+				noteSuffix := ""
+				if isLast && hasNote {
+					noteSuffix = " " + styleDim.Render("✎")
+				}
+				pfx := contIndent
+				bullet := " "
+				if ci == 0 {
+					pfx = indent
+					bullet = "•"
+				}
+				lines = append(lines, pfx+bullet+" "+m.renderRowText(chunk, "")+noteSuffix)
 			}
-			line = fmt.Sprintf("%s• %s%s", indent, m.renderRowText(item.row.Text, ""), noteSuffix)
 		}
-		lines = append(lines, line)
 	}
 	return lines
 }
