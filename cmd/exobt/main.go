@@ -65,6 +65,11 @@ type editorDoneMsg struct {
 	err    error
 }
 
+type tagStackEntry struct {
+	tagName string
+	rowID   int64 // row we were on when we navigated away (0 if unknown)
+}
+
 type undoEntry struct {
 	desc    string
 	tagID   int64
@@ -89,7 +94,7 @@ type model struct {
 	selectedRows map[int64]bool // row IDs in the multi-select set
 
 	snarfedRows []db.Row
-	tagStack    []string
+	tagStack    []tagStackEntry
 	undoStack  []undoEntry
 	redoStack  []undoEntry
 
@@ -255,7 +260,11 @@ func (m *model) assignTagShortcut(tag db.Tag) int {
 func (m *model) switchTag(tag db.Tag) {
 	if tag.ID != m.dbState.CurrentDBTag.ID && m.dbState.CurrentDBTag.ID != 0 {
 		_ = m.dbState.DeleteTagIfEmpty(m.dbState.CurrentDBTag.ID)
-		m.tagStack = append(m.tagStack, m.dbState.CurrentDBTag.Name)
+		var rowID int64
+		if m.cursor < len(m.rowItems) {
+			rowID = m.rowItems[m.cursor].row.ID
+		}
+		m.tagStack = append(m.tagStack, tagStackEntry{tagName: m.dbState.CurrentDBTag.Name, rowID: rowID})
 	}
 	m.dbState.CurrentDBTag = tag
 	m.cursor = 0
@@ -281,10 +290,10 @@ func (m *model) popTag() {
 		return
 	}
 	l := len(m.tagStack)
-	name := m.tagStack[l-1]
+	entry := m.tagStack[l-1]
 	m.tagStack = m.tagStack[:l-1]
 
-	tag, err := m.dbState.AddTag(name)
+	tag, err := m.dbState.AddTag(entry.tagName)
 	if err != nil {
 		m.setErr(err.Error())
 		return
@@ -295,6 +304,7 @@ func (m *model) popTag() {
 	m.dbState.CurrentDBTag = tag
 	m.cursor = 0
 	m.refresh()
+	m.positionCursor(entry.rowID)
 	m.status = ""
 }
 
