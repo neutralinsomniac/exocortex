@@ -108,6 +108,11 @@ type model struct {
 	filteredTags []db.Tag
 	tagCursor    int
 
+	// inline tag autocomplete (active in modeInput when typing [[)
+	acActive bool
+	acTags   []db.Tag
+	acCursor int
+
 	// calendar mode
 	calDate time.Time
 
@@ -392,6 +397,54 @@ func (m *model) resolveUndoTag(entry undoEntry) db.Tag {
 		}
 	}
 	return db.Tag{}
+}
+
+// tagCompletePrefix returns the partial text after the last '[[' if the input
+// looks like an open tag reference (no matching ']]' yet), else ("", false).
+func tagCompletePrefix(val string) (string, bool) {
+	idx := strings.LastIndex(val, "[[")
+	if idx < 0 {
+		return "", false
+	}
+	after := val[idx+2:]
+	if strings.Contains(after, "]]") {
+		return "", false
+	}
+	return after, true
+}
+
+func (m *model) updateTagComplete() {
+	prefix, ok := tagCompletePrefix(m.textInput.Value())
+	if !ok {
+		m.acActive = false
+		return
+	}
+	m.acActive = true
+	f := strings.ToLower(prefix)
+	m.acTags = nil
+	for _, tag := range m.dbState.AllDBTags {
+		if strings.Contains(strings.ToLower(tag.Name), f) {
+			m.acTags = append(m.acTags, tag)
+		}
+	}
+	if m.acCursor >= len(m.acTags) {
+		m.acCursor = 0
+	}
+}
+
+func (m *model) completeTag() {
+	if !m.acActive || len(m.acTags) == 0 {
+		return
+	}
+	tag := m.acTags[m.acCursor]
+	val := m.textInput.Value()
+	idx := strings.LastIndex(val, "[[")
+	if idx < 0 {
+		return
+	}
+	m.textInput.SetValue(val[:idx] + "[[" + tag.Name + "]]")
+	m.textInput.CursorEnd()
+	m.acActive = false
 }
 
 func (m *model) updateFilteredTags() {
@@ -1183,14 +1236,38 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 }
 
 func (m *model) handleInputKey(msg tea.KeyMsg) tea.Cmd {
+	// When autocomplete is active, intercept navigation keys.
+	if m.acActive {
+		switch msg.Type {
+		case tea.KeyEsc:
+			m.acActive = false
+			return nil
+		case tea.KeyUp:
+			if m.acCursor > 0 {
+				m.acCursor--
+			}
+			return nil
+		case tea.KeyDown:
+			if m.acCursor < len(m.acTags)-1 {
+				m.acCursor++
+			}
+			return nil
+		case tea.KeyTab, tea.KeyEnter:
+			m.completeTag()
+			return nil
+		}
+	}
+
 	switch msg.Type {
 	case tea.KeyEsc:
 		m.mode = modeMain
+		m.acActive = false
 		m.textInput.Blur()
 		return nil
 	case tea.KeyEnter:
 		text := strings.TrimSpace(m.textInput.Value())
 		m.mode = modeMain
+		m.acActive = false
 		m.textInput.Blur()
 		if text == "" {
 			switch m.pendingAction {
@@ -1209,6 +1286,7 @@ func (m *model) handleInputKey(msg tea.KeyMsg) tea.Cmd {
 	}
 	var cmd tea.Cmd
 	m.textInput, cmd = m.textInput.Update(msg)
+	m.updateTagComplete()
 	return cmd
 }
 
@@ -1578,6 +1656,30 @@ func (m model) viewInput() string {
 	inputLine := " " + styleKey.Render(prompt) +
 		m.textInput.View() +
 		styleDim.Render("  esc to cancel")
+
+	if m.acActive {
+		const maxVisible = 6
+		var acLines []string
+		for i, tag := range m.acTags {
+			if i >= maxVisible {
+				break
+			}
+			line := "  " + tag.Name
+			if i == m.acCursor {
+				line = styleSelected.Render(line)
+			}
+			acLines = append(acLines, line)
+		}
+		if len(m.acTags) == 0 {
+			acLines = append(acLines, styleDim.Render("  (no matching tags)"))
+		}
+		hint := " " + styleDim.Render(
+			styleKey.Render("↑↓")+" navigate  "+
+				styleKey.Render("tab/enter")+" select  "+
+				styleKey.Render("esc")+" dismiss",
+		)
+		return box + "\n" + inputLine + "\n" + strings.Join(acLines, "\n") + "\n" + hint
+	}
 
 	return box + "\n" + inputLine + "\n" + m.hints()
 }
