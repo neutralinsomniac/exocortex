@@ -99,8 +99,9 @@ type model struct {
 	redoStack   []undoEntry
 
 	// navigation
-	cursor int
-	mode   viewMode
+	cursor     int
+	lineOffset int // scroll offset into mainContentLines
+	mode       viewMode
 
 	// input mode
 	textInput     textinput.Model
@@ -291,6 +292,7 @@ func (m *model) switchTag(tag db.Tag) {
 	}
 	m.dbState.CurrentDBTag = tag
 	m.cursor = 0
+	m.lineOffset = 0
 	m.selectedRows = make(map[int64]bool)
 	m.refresh()
 }
@@ -326,6 +328,7 @@ func (m *model) popTag() {
 	}
 	m.dbState.CurrentDBTag = tag
 	m.cursor = 0
+	m.lineOffset = 0
 	m.refresh()
 	m.positionCursor(entry.rowID)
 	m.status = ""
@@ -373,6 +376,7 @@ func (m *model) applyUndo() {
 	if tag := m.resolveUndoTag(entry); tag.ID != 0 {
 		m.dbState.CurrentDBTag = tag
 		m.cursor = 0
+		m.lineOffset = 0
 	}
 	m.setStatus("undid: " + entry.desc)
 	m.refresh()
@@ -397,6 +401,7 @@ func (m *model) applyRedo() {
 	if tag := m.resolveUndoTag(entry); tag.ID != 0 {
 		m.dbState.CurrentDBTag = tag
 		m.cursor = 0
+		m.lineOffset = 0
 	}
 	m.setStatus("redid: " + entry.desc)
 	m.refresh()
@@ -411,6 +416,7 @@ func (m *model) positionCursor(rowID int64) {
 	for i, item := range m.rowItems {
 		if item.row.ID == rowID {
 			m.cursor = i
+			m.clampLineOffset()
 			return
 		}
 	}
@@ -710,10 +716,12 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 	case "up", "k":
 		if m.cursor > 0 {
 			m.cursor--
+			m.clampLineOffset()
 		}
 	case "down", "j":
 		if m.cursor < len(m.rowItems)-1 {
 			m.cursor++
+			m.clampLineOffset()
 		}
 
 	case "u":
@@ -742,6 +750,7 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 		})
 		m.cursor--
 		m.refresh()
+		m.clampLineOffset()
 
 	case "J": // move selected row down
 		next := m.cursor + 1
@@ -765,6 +774,7 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 		})
 		m.cursor++
 		m.refresh()
+		m.clampLineOffset()
 
 	case " ":
 		if len(m.rowItems) == 0 || m.cursor >= len(m.rowItems) {
@@ -783,6 +793,7 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 		if m.cursor < len(m.rowItems)-1 {
 			m.cursor++
 		}
+		m.clampLineOffset()
 
 	case "g":
 		m.status = ""
@@ -809,6 +820,7 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 			for i, ri := range m.rowItems {
 				if ri.row.ID == rowID {
 					m.cursor = i
+					m.clampLineOffset()
 					break
 				}
 			}
@@ -1600,6 +1612,57 @@ func (m model) mainContentLines(innerW int) []string {
 	return lines
 }
 
+// cursorLineRange returns the first and last line index (0-based) within
+// mainContentLines that belong to the cursor row.
+func (m model) cursorLineRange(innerW int) (first, last int) {
+	line := 0
+	prevRefTag := db.Tag{}
+	for i, item := range m.rowItems {
+		if item.isRef && item.refTag != prevRefTag {
+			if prevRefTag.ID == 0 {
+				line += 2
+			}
+			line++
+			prevRefTag = item.refTag
+		}
+		indent := " "
+		if item.isRef {
+			indent = "   "
+		}
+		prefixW := ansi.StringWidth(indent) + 2
+		noteSuffixW := 0
+		if !item.isRef && item.row.Note != "" {
+			noteSuffixW = 2
+		}
+		textW := max(innerW-prefixW-noteSuffixW, 1)
+		nLines := len(wrapText(item.row.Text, textW))
+		if i == m.cursor {
+			return line, line + nLines - 1
+		}
+		line += nLines
+	}
+	return 0, 0
+}
+
+// clampLineOffset adjusts m.lineOffset so the cursor row stays visible.
+func (m *model) clampLineOffset() {
+	tw := m.textW()
+	visible := m.lineCount(2) - 2 // subtract 2 header lines
+	if visible <= 0 {
+		return
+	}
+	cFirst, cLast := m.cursorLineRange(tw)
+	if cLast >= m.lineOffset+visible {
+		m.lineOffset = cLast - visible + 1
+	}
+	if cFirst < m.lineOffset {
+		m.lineOffset = cFirst
+	}
+	if m.lineOffset < 0 {
+		m.lineOffset = 0
+	}
+}
+
 func (m model) viewMain() string {
 	tw := m.textW()
 	lc := m.lineCount(2) // 2 lines below box: status + hints
@@ -1608,7 +1671,9 @@ func (m model) viewMain() string {
 		styleHeader.Render(" " + m.dbState.CurrentDBTag.Name),
 		rule(tw, ""),
 	}
-	content := fitLines(m.mainContentLines(tw), lc-len(header), tw)
+	allLines := m.mainContentLines(tw)
+	off := min(m.lineOffset, len(allLines))
+	content := fitLines(allLines[off:], lc-len(header), tw)
 
 	box := m.bordered(2).Render(
 		boxContent(header, content, tw),
@@ -1624,7 +1689,9 @@ func (m model) viewInput() string {
 		styleHeader.Render(" " + m.dbState.CurrentDBTag.Name),
 		rule(tw, ""),
 	}
-	content := fitLines(m.mainContentLines(tw), lc-len(header), tw)
+	allLines2 := m.mainContentLines(tw)
+	off2 := min(m.lineOffset, len(allLines2))
+	content := fitLines(allLines2[off2:], lc-len(header), tw)
 
 	box := m.bordered(2).Render(
 		boxContent(header, content, tw),
