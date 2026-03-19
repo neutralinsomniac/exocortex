@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -1950,9 +1951,30 @@ func (m model) viewHelp() string {
 
 // ── main ─────────────────────────────────────────────────────────────────────
 
+func dbPath() (string, error) {
+	dataHome := os.Getenv("XDG_DATA_HOME")
+	if dataHome == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		dataHome = filepath.Join(home, ".local", "share")
+	}
+	dir := filepath.Join(dataHome, "exocortex")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "exocortex.db"), nil
+}
+
 func main() {
+	path, err := dbPath()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "resolve db path:", err)
+		os.Exit(1)
+	}
 	exoDB := &db.ExoDB{}
-	if err := exoDB.Open("./exocortex.db"); err != nil {
+	if err := exoDB.Open(path); err != nil {
 		fmt.Fprintln(os.Stderr, "open db:", err)
 		os.Exit(1)
 	}
