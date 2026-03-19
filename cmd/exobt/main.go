@@ -723,6 +723,10 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 			m.cursor++
 			m.clampLineOffset()
 		}
+	case "pgup", "ctrl+b":
+		m.pageCursor(-1)
+	case "pgdown", "ctrl+f":
+		m.pageCursor(+1)
 
 	case "u":
 		m.applyUndo()
@@ -1642,6 +1646,71 @@ func (m model) cursorLineRange(innerW int) (first, last int) {
 		line += nLines
 	}
 	return 0, 0
+}
+
+// pageSize returns the number of visible content lines (excluding header).
+func (m model) pageSize() int { return max(m.lineCount(2)-2, 1) }
+
+// pageCursor moves the cursor forward (dir=+1) or backward (dir=-1) by one
+// page worth of content lines, then clamps the scroll offset.
+func (m *model) pageCursor(dir int) {
+	if len(m.rowItems) == 0 {
+		return
+	}
+	tw := m.textW()
+	pg := m.pageSize()
+
+	// Build a slice of cumulative first-line indices per item, mirroring
+	// cursorLineRange logic so we can binary-search by line count.
+	type itemLine struct{ first, last int }
+	items := make([]itemLine, len(m.rowItems))
+	line := 0
+	prevRefTag := db.Tag{}
+	for i, item := range m.rowItems {
+		if item.isRef && item.refTag != prevRefTag {
+			if prevRefTag.ID == 0 {
+				line += 2
+			}
+			line++
+			prevRefTag = item.refTag
+		}
+		indent := " "
+		if item.isRef {
+			indent = "   "
+		}
+		prefixW := ansi.StringWidth(indent) + 2
+		noteSuffixW := 0
+		if !item.isRef && item.row.Note != "" {
+			noteSuffixW = 2
+		}
+		textW := max(tw-prefixW-noteSuffixW, 1)
+		nLines := len(wrapText(item.row.Text, textW))
+		items[i] = itemLine{line, line + nLines - 1}
+		line += nLines
+	}
+
+	cFirst := items[m.cursor].first
+	target := cFirst + dir*pg // target first-line of new cursor row
+
+	// Find the item whose first line is closest to target in the given direction.
+	best := m.cursor
+	if dir > 0 {
+		for i := m.cursor + 1; i < len(items); i++ {
+			best = i
+			if items[i].first >= target {
+				break
+			}
+		}
+	} else {
+		for i := m.cursor - 1; i >= 0; i-- {
+			best = i
+			if items[i].first <= target {
+				break
+			}
+		}
+	}
+	m.cursor = best
+	m.clampLineOffset()
 }
 
 // clampLineOffset adjusts m.lineOffset so the cursor row stays visible.
