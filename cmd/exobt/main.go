@@ -1753,19 +1753,6 @@ func (m model) viewMain() string {
 
 func (m model) viewInput() string {
 	tw := m.textW()
-	lc := m.lineCount(2)
-
-	header := []string{
-		styleHeader.Render(" " + m.dbState.CurrentDBTag.Name),
-		rule(tw, ""),
-	}
-	allLines2 := m.mainContentLines(tw)
-	off2 := min(m.lineOffset, len(allLines2))
-	content := fitLines(allLines2[off2:], lc-len(header), tw)
-
-	box := m.bordered(2).Render(
-		boxContent(header, content, tw),
-	)
 
 	prompt := inputPrompts[m.pendingAction] + ": "
 	inputLine := " " + styleKey.Render(prompt) +
@@ -1793,9 +1780,29 @@ func (m model) viewInput() string {
 				styleKey.Render("tab/enter")+" select  "+
 				styleKey.Render("esc")+" dismiss",
 		)
-		return box + "\n" + inputLine + "\n" + strings.Join(acLines, "\n") + "\n" + hint
+		// acRows = suggestion lines + hint line + input line
+		acRows := len(acLines) + 1 + 1
+		lc := m.lineCount(acRows)
+		header := []string{
+			styleHeader.Render(" " + m.dbState.CurrentDBTag.Name),
+			rule(tw, ""),
+		}
+		allLines := m.mainContentLines(tw)
+		off := min(m.lineOffset, len(allLines))
+		content := fitLines(allLines[off:], lc-len(header), tw)
+		box := m.bordered(acRows).Render(boxContent(header, content, tw))
+		return box + "\n" + strings.Join(acLines, "\n") + "\n" + inputLine + "\n" + hint
 	}
 
+	lc := m.lineCount(2)
+	header := []string{
+		styleHeader.Render(" " + m.dbState.CurrentDBTag.Name),
+		rule(tw, ""),
+	}
+	allLines := m.mainContentLines(tw)
+	off := min(m.lineOffset, len(allLines))
+	content := fitLines(allLines[off:], lc-len(header), tw)
+	box := m.bordered(2).Render(boxContent(header, content, tw))
 	return box + "\n" + inputLine + "\n" + m.hints()
 }
 
