@@ -35,7 +35,7 @@
 
         packages.exobt = pkgs.buildGoModule {
           name = "exobt";
-          version = "1.0.6";
+          version = "1.1.0";
 
           src = lib.cleanSource ./.;
 

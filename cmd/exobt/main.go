@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -40,6 +41,7 @@ const (
 	modeTagSelect
 	modeCalendar
 	modeHelp
+	modeSearch
 )
 
 type pendingAction int
@@ -57,6 +59,13 @@ type rowItem struct {
 	row    db.Row
 	isRef  bool
 	refTag db.Tag
+}
+
+type searchResult struct {
+	row          db.Row
+	tag          db.Tag
+	matchIndices []int // rune indices in row.Text that matched the query
+	isExact      bool  // true when query is a substring of row.Text
 }
 
 type editorDoneMsg struct {
@@ -123,6 +132,12 @@ type model struct {
 	// calendar mode
 	calDate time.Time
 
+	// search mode
+	searchInput   textinput.Model
+	allSearchRows []searchResult
+	searchResults []searchResult
+	searchCursor  int
+
 	// status bar
 	status string
 	isErr  bool
@@ -148,9 +163,14 @@ func newModel(exoDB *db.ExoDB) model {
 	tagi.Placeholder = "type to filter..."
 	tagi.CharLimit = 200
 
+	si := textinput.New()
+	si.Placeholder = "fuzzy search all items..."
+	si.CharLimit = 200
+
 	m := model{
 		textInput:       ti,
 		tagInput:        tagi,
+		searchInput:     si,
 		tagShortcuts:    make(map[db.Tag]int),
 		tagShortcutsRev: make(map[int]db.Tag),
 		tagNameToNum:    make(map[string]int),
@@ -503,6 +523,50 @@ func (m *model) updateFilteredTags() {
 	}
 }
 
+// fuzzyMatchIndices returns the rune indices in text that match the query
+// characters in order (case-insensitive). Returns nil if no match.
+// An empty query matches everything and returns an empty slice.
+func fuzzyMatchIndices(query, text string) []int {
+	if query == "" {
+		return []int{}
+	}
+	qr := []rune(query)
+	tr := []rune(text)
+	indices := make([]int, 0, len(qr))
+	qi := 0
+	for i, ch := range tr {
+		if ch == qr[qi] {
+			indices = append(indices, i)
+			qi++
+			if qi == len(qr) {
+				return indices
+			}
+		}
+	}
+	return nil
+}
+
+func (m *model) updateSearchResults() {
+	q := strings.ToLower(m.searchInput.Value())
+	m.searchResults = nil
+	for _, sr := range m.allSearchRows {
+		lower := strings.ToLower(sr.row.Text)
+		indices := fuzzyMatchIndices(q, lower)
+		if indices == nil {
+			continue
+		}
+		sr.matchIndices = indices
+		sr.isExact = q != "" && strings.Contains(lower, q)
+		m.searchResults = append(m.searchResults, sr)
+	}
+	sort.SliceStable(m.searchResults, func(i, j int) bool {
+		return m.searchResults[i].isExact && !m.searchResults[j].isExact
+	})
+	if m.searchCursor >= len(m.searchResults) {
+		m.searchCursor = 0
+	}
+}
+
 // ── editor ───────────────────────────────────────────────────────────────────
 
 func openEditorCmd(initialText string, action pendingAction, row db.Row) tea.Cmd {
@@ -556,6 +620,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmd = m.handleCalendarKey(msg)
 		case modeHelp:
 			m.mode = modeMain
+		case modeSearch:
+			cmd = m.handleSearchKey(msg)
 		}
 	}
 	return m, cmd
@@ -1232,6 +1298,24 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 	case "?":
 		m.mode = modeHelp
 
+	case "/":
+		m.allSearchRows = nil
+		for _, tag := range m.dbState.AllDBTags {
+			rows, err := m.dbState.GetRowsForTagID(tag.ID)
+			if err != nil {
+				continue
+			}
+			for _, row := range rows {
+				m.allSearchRows = append(m.allSearchRows, searchResult{row: row, tag: tag})
+			}
+		}
+		m.mode = modeSearch
+		m.searchInput.SetValue("")
+		m.searchInput.Focus()
+		m.searchCursor = 0
+		m.updateSearchResults()
+		return textinput.Blink
+
 	default:
 		if i, err := strconv.Atoi(msg.String()); err == nil {
 			if tag, ok := m.tagShortcutsRev[i]; ok {
@@ -1332,6 +1416,44 @@ func (m *model) handleTagSelectKey(msg tea.KeyMsg) tea.Cmd {
 	return cmd
 }
 
+func (m *model) handleSearchKey(msg tea.KeyMsg) tea.Cmd {
+	switch msg.Type {
+	case tea.KeyEsc:
+		m.mode = modeMain
+		m.searchInput.Blur()
+		return nil
+	case tea.KeyEnter:
+		if m.searchCursor < len(m.searchResults) {
+			sr := m.searchResults[m.searchCursor]
+			m.mode = modeMain
+			m.searchInput.Blur()
+			m.status = ""
+			tag, err := m.dbState.GetTagByID(sr.tag.ID)
+			if err != nil || tag.ID == 0 {
+				m.setErr("tag not found")
+				return nil
+			}
+			m.switchTag(tag)
+			m.positionCursor(sr.row.ID)
+		}
+		return nil
+	case tea.KeyUp:
+		if m.searchCursor > 0 {
+			m.searchCursor--
+		}
+		return nil
+	case tea.KeyDown:
+		if m.searchCursor < len(m.searchResults)-1 {
+			m.searchCursor++
+		}
+		return nil
+	}
+	var cmd tea.Cmd
+	m.searchInput, cmd = m.searchInput.Update(msg)
+	m.updateSearchResults()
+	return cmd
+}
+
 func (m *model) handleCalendarKey(msg tea.KeyMsg) tea.Cmd {
 	switch msg.String() {
 	case "q", "esc":
@@ -1374,6 +1496,8 @@ func (m model) View() string {
 		return m.viewCalendar()
 	case modeHelp:
 		return m.viewHelp()
+	case modeSearch:
+		return m.viewSearch()
 	}
 	return ""
 }
@@ -1416,6 +1540,7 @@ func (m model) hints() string {
 		styleKey.Render("d") + " cut",
 		styleKey.Render("e") + " edit",
 		styleKey.Render("u/U") + " undo/redo",
+		styleKey.Render("/") + " search",
 		styleKey.Render("t") + " tags",
 		styleKey.Render("g") + " today",
 		styleKey.Render("b") + " back",
@@ -1498,6 +1623,47 @@ func (m model) renderRowText(text string, bg string) string {
 			sb.WriteString(tagStyle.Render(name))
 		}
 		text = text[loc[1]:]
+	}
+	return sb.String()
+}
+
+// renderSearchMatch renders text with matched rune indices highlighted.
+// bg, if non-empty, is applied as background to every span.
+func renderSearchMatch(text string, indices []int, bg string) string {
+	matchStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("3"))
+	plainStyle := lipgloss.NewStyle()
+	if bg != "" {
+		matchStyle = matchStyle.Background(lipgloss.Color(bg))
+		plainStyle = plainStyle.Background(lipgloss.Color(bg))
+	}
+	if len(indices) == 0 {
+		if bg != "" {
+			return plainStyle.Render(text)
+		}
+		return text
+	}
+	matchSet := make(map[int]bool, len(indices))
+	for _, i := range indices {
+		matchSet[i] = true
+	}
+	var sb strings.Builder
+	runes := []rune(text)
+	i := 0
+	for i < len(runes) {
+		isMatch := matchSet[i]
+		j := i + 1
+		for j < len(runes) && matchSet[j] == isMatch {
+			j++
+		}
+		chunk := string(runes[i:j])
+		if isMatch {
+			sb.WriteString(matchStyle.Render(chunk))
+		} else if bg != "" {
+			sb.WriteString(plainStyle.Render(chunk))
+		} else {
+			sb.WriteString(chunk)
+		}
+		i = j
 	}
 	return sb.String()
 }
@@ -1841,6 +2007,53 @@ func (m model) viewTagSelect() string {
 	return box + "\n" + m.statusLine() + "\n" + navHints
 }
 
+func (m model) viewSearch() string {
+	tw := m.textW()
+	lc := m.lineCount(2)
+
+	header := []string{
+		styleHeader.Render(" Search"),
+		rule(tw, ""),
+		" / " + m.searchInput.View(),
+		rule(tw, ""),
+	}
+
+	var resultLines []string
+	prevTag := db.Tag{}
+	for i, sr := range m.searchResults {
+		if sr.tag != prevTag {
+			resultLines = append(resultLines, rule(tw, sr.tag.Name))
+			prevTag = sr.tag
+		}
+		bg := ""
+		if i == m.searchCursor {
+			bg = "240"
+		}
+		pfx := "   • "
+		if bg != "" {
+			pfx = lipgloss.NewStyle().Background(lipgloss.Color(bg)).Render(pfx)
+		}
+		line := pfx + renderSearchMatch(sr.row.Text, sr.matchIndices, bg)
+		resultLines = append(resultLines, line)
+	}
+	if len(m.searchResults) == 0 {
+		if m.searchInput.Value() == "" {
+			resultLines = append(resultLines, styleDim.Render(" (type to search all items)"))
+		} else {
+			resultLines = append(resultLines, styleDim.Render(" (no results)"))
+		}
+	}
+
+	content := fitLines(resultLines, lc-len(header), tw)
+	box := m.bordered(2).Render(boxContent(header, content, tw))
+	navHints := " " + styleDim.Render(
+		styleKey.Render("↑↓")+" navigate  "+
+			styleKey.Render("enter")+" go to item  "+
+			styleKey.Render("esc")+" cancel",
+	)
+	return box + "\n" + m.statusLine() + "\n" + navHints
+}
+
 func (m model) viewCalendar() string {
 	tw := m.textW()
 	lc := m.lineCount(2)
@@ -1927,6 +2140,7 @@ func (m model) viewHelp() string {
 		"   n          new tag",
 		"   r          rename current tag",
 		"   t          tag selector (type to filter)",
+		"   /          fuzzy search all items",
 		"   c          calendar",
 		"   < >        prev/next day",
 		"   b          back in tag stack",
