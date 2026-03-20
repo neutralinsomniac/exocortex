@@ -178,6 +178,13 @@ func newModel(exoDB *db.ExoDB) model {
 		selectedRows:    make(map[int64]bool),
 	}
 	m.dbState.ExoDB = exoDB
+	if lastTag, err := exoDB.GetSetting("last_tag"); err == nil && lastTag != "" {
+		if tag, err := exoDB.GetTagByName(lastTag); err == nil && tag.ID != 0 {
+			m.dbState.CurrentDBTag = tag
+			m.refresh()
+			return m
+		}
+	}
 	m.goToToday()
 	return m
 }
@@ -777,6 +784,7 @@ func (m *model) handleEditorDone(msg editorDoneMsg) tea.Cmd {
 func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 	switch msg.String() {
 	case "ctrl+c", "q":
+		_ = m.dbState.SetSetting("last_tag", m.dbState.CurrentDBTag.Name)
 		_ = m.dbState.DeleteTagIfEmpty(m.dbState.CurrentDBTag.ID)
 		return tea.Quit
 

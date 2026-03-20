@@ -21,15 +21,31 @@ func (e *ExoDB) LoadSchema() error {
 func (e *ExoDB) Migrate() error {
 	migrations := []string{
 		`ALTER TABLE row ADD COLUMN note TEXT NOT NULL DEFAULT ''`,
+		`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '')`,
 	}
 	for _, m := range migrations {
 		if _, err := e.conn.Exec(m); err != nil {
-			if !strings.Contains(err.Error(), "duplicate column name") {
+			if !strings.Contains(err.Error(), "duplicate column name") &&
+				!strings.Contains(err.Error(), "already exists") {
 				return err
 			}
 		}
 	}
 	return nil
+}
+
+func (e *ExoDB) GetSetting(key string) (string, error) {
+	var value string
+	err := e.conn.QueryRow("SELECT value FROM settings WHERE key = ?", key).Scan(&value)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	return value, err
+}
+
+func (e *ExoDB) SetSetting(key, value string) error {
+	_, err := e.conn.Exec("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", key, value)
+	return err
 }
 
 func (e *ExoDB) Open(filename string) error {
