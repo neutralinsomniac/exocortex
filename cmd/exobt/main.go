@@ -6,7 +6,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -62,10 +61,10 @@ type rowItem struct {
 }
 
 type searchResult struct {
-	row          db.Row
-	tag          db.Tag
-	matchIndices []int // rune indices in row.Text that matched the query
-	isExact      bool  // true when query is a substring of row.Text
+	row        db.Row
+	tag        db.Tag
+	matchStart int // rune index of match start in row.Text
+	matchEnd   int // rune index of match end (exclusive)
 }
 
 type editorDoneMsg struct {
@@ -530,45 +529,24 @@ func (m *model) updateFilteredTags() {
 	}
 }
 
-// fuzzyMatchIndices returns the rune indices in text that match the query
-// characters in order (case-insensitive). Returns nil if no match.
-// An empty query matches everything and returns an empty slice.
-func fuzzyMatchIndices(query, text string) []int {
-	if query == "" {
-		return []int{}
-	}
-	qr := []rune(query)
-	tr := []rune(text)
-	indices := make([]int, 0, len(qr))
-	qi := 0
-	for i, ch := range tr {
-		if ch == qr[qi] {
-			indices = append(indices, i)
-			qi++
-			if qi == len(qr) {
-				return indices
-			}
-		}
-	}
-	return nil
-}
-
 func (m *model) updateSearchResults() {
 	q := strings.ToLower(m.searchInput.Value())
 	m.searchResults = nil
 	for _, sr := range m.allSearchRows {
-		lower := strings.ToLower(sr.row.Text)
-		indices := fuzzyMatchIndices(q, lower)
-		if indices == nil {
+		if q == "" {
+			m.searchResults = append(m.searchResults, sr)
 			continue
 		}
-		sr.matchIndices = indices
-		sr.isExact = q != "" && strings.Contains(lower, q)
+		lower := strings.ToLower(sr.row.Text)
+		byteIdx := strings.Index(lower, q)
+		if byteIdx < 0 {
+			continue
+		}
+		// Convert byte index to rune index.
+		sr.matchStart = len([]rune(lower[:byteIdx]))
+		sr.matchEnd = sr.matchStart + len([]rune(q))
 		m.searchResults = append(m.searchResults, sr)
 	}
-	sort.SliceStable(m.searchResults, func(i, j int) bool {
-		return m.searchResults[i].isExact && !m.searchResults[j].isExact
-	})
 	if m.searchCursor >= len(m.searchResults) {
 		m.searchCursor = 0
 	}
@@ -1635,43 +1613,36 @@ func (m model) renderRowText(text string, bg string) string {
 	return sb.String()
 }
 
-// renderSearchMatch renders text with matched rune indices highlighted.
-// bg, if non-empty, is applied as background to every span.
-func renderSearchMatch(text string, indices []int, bg string) string {
+// renderSearchMatch renders text with the rune range [matchStart, matchEnd)
+// highlighted bold+yellow. bg, if non-empty, is applied to every span.
+func renderSearchMatch(text string, matchStart, matchEnd int, bg string) string {
 	matchStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("3"))
 	plainStyle := lipgloss.NewStyle()
 	if bg != "" {
 		matchStyle = matchStyle.Background(lipgloss.Color(bg))
 		plainStyle = plainStyle.Background(lipgloss.Color(bg))
 	}
-	if len(indices) == 0 {
+	runes := []rune(text)
+	if matchStart >= matchEnd || matchEnd > len(runes) {
 		if bg != "" {
 			return plainStyle.Render(text)
 		}
 		return text
 	}
-	matchSet := make(map[int]bool, len(indices))
-	for _, i := range indices {
-		matchSet[i] = true
-	}
+	pre := string(runes[:matchStart])
+	mid := string(runes[matchStart:matchEnd])
+	post := string(runes[matchEnd:])
 	var sb strings.Builder
-	runes := []rune(text)
-	i := 0
-	for i < len(runes) {
-		isMatch := matchSet[i]
-		j := i + 1
-		for j < len(runes) && matchSet[j] == isMatch {
-			j++
-		}
-		chunk := string(runes[i:j])
-		if isMatch {
-			sb.WriteString(matchStyle.Render(chunk))
-		} else if bg != "" {
-			sb.WriteString(plainStyle.Render(chunk))
-		} else {
-			sb.WriteString(chunk)
-		}
-		i = j
+	if bg != "" {
+		sb.WriteString(plainStyle.Render(pre))
+	} else {
+		sb.WriteString(pre)
+	}
+	sb.WriteString(matchStyle.Render(mid))
+	if bg != "" {
+		sb.WriteString(plainStyle.Render(post))
+	} else {
+		sb.WriteString(post)
 	}
 	return sb.String()
 }
@@ -2041,7 +2012,7 @@ func (m model) viewSearch() string {
 		if bg != "" {
 			pfx = lipgloss.NewStyle().Background(lipgloss.Color(bg)).Render(pfx)
 		}
-		line := pfx + renderSearchMatch(sr.row.Text, sr.matchIndices, bg)
+		line := pfx + renderSearchMatch(sr.row.Text, sr.matchStart, sr.matchEnd, bg)
 		resultLines = append(resultLines, line)
 	}
 	if len(m.searchResults) == 0 {
