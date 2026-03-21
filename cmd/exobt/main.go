@@ -654,13 +654,15 @@ func (m *model) handleEditorDone(msg editorDoneMsg) tea.Cmd {
 		})
 		m.status = ""
 		m.refresh()
+		m.positionCursor(row.ID)
 	case actionInsertRow:
 		row, err := m.dbState.AddRow(m.dbState.CurrentDBTag.ID, msg.text, 0)
 		if err != nil {
 			m.setErr(err.Error())
 			return nil
 		}
-		_ = m.dbState.UpdateRowRank(row.ID, 0)
+		rank := m.pendingRank
+		_ = m.dbState.UpdateRowRank(row.ID, rank)
 		tagID, tagName, text := m.dbState.CurrentDBTag.ID, m.dbState.CurrentDBTag.Name, msg.text
 		var latestID int64 = row.ID
 		m.pushUndo(undoEntry{
@@ -680,11 +682,12 @@ func (m *model) handleEditorDone(msg editorDoneMsg) tea.Cmd {
 					return 0, err
 				}
 				latestID = newRow.ID
-				return latestID, exoDB.UpdateRowRank(latestID, 0)
+				return latestID, exoDB.UpdateRowRank(latestID, rank)
 			},
 		})
 		m.status = ""
 		m.refresh()
+		m.positionCursor(row.ID)
 	case actionEditNote:
 		oldNote, newNote, rowID := msg.row.Note, msg.text, msg.row.ID
 		if err := m.dbState.UpdateRowNote(rowID, newNote); err != nil {
@@ -897,7 +900,7 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 			m.setStatus("multiple tags in row — use number shortcuts to navigate")
 		}
 
-	case "a":
+	case "o":
 		m.mode = modeInput
 		m.pendingAction = actionAddRow
 		m.pendingRank = m.afterCursorRank()
@@ -907,9 +910,14 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 		m.textInput.Focus()
 		return textinput.Blink
 
-	case "A":
+	case "O":
 		m.mode = modeInput
 		m.pendingAction = actionInsertRow
+		if m.cursor < len(m.rowItems) && !m.rowItems[m.cursor].isRef {
+			m.pendingRank = m.cursor
+		} else {
+			m.pendingRank = 0
+		}
 		m.setInputWidth()
 		m.textInput.SetValue("")
 		m.textInput.Placeholder = "row text (empty = open $EDITOR)"
@@ -2128,8 +2136,8 @@ func (m model) viewHelp() string {
 		" " + styleKey.Render("[Rows]"),
 		"   j / k      move cursor down / up",
 		"   enter      follow tag link in selected row",
-		"   a          add row to end",
-		"   A          insert row at beginning",
+		"   o          add row below cursor",
+		"   O          insert row above cursor",
 		"   space       toggle row in/out of selection",
 		"   e          edit selected row",
 		"   N          add/edit note on selected row",
