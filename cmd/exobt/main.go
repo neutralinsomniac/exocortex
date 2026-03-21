@@ -869,7 +869,7 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 		m.status = ""
 		m.goToInbox()
 
-	case "b":
+	case "ctrl+t":
 		m.popTag()
 
 	case "enter":
@@ -2030,7 +2030,7 @@ func (m model) viewHelp() string {
 		"   r          rename current tag",
 		"   t          tag selector (type to filter)",
 		"   /          fuzzy search all items",
-		"   b          back in tag stack",
+		"   ctrl-t     back in tag stack",
 		"   1-9        jump to tag reference",
 		"",
 		" " + styleKey.Render("[Rows]"),
