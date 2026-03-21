@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS "row" (
 	"parent_row_id"	INTEGER,
 	"updated_ts"	INTEGER,
 	"note"	TEXT NOT NULL DEFAULT '',
+	"priority"	INTEGER NOT NULL DEFAULT 0,
 	FOREIGN KEY("tag_id") REFERENCES "tag"("id") ON DELETE CASCADE,
 	PRIMARY KEY("id")
 );

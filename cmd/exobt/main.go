@@ -1,11 +1,13 @@
 package main
 
 import (
+	"cmp"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -27,6 +29,16 @@ var (
 	styleOK        = lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
 	styleDim       = lipgloss.NewStyle().Faint(true)
 	styleKey       = lipgloss.NewStyle().Bold(true)
+
+	// priority bullet styles: 1=red, 2=yellow, 3=green, 4=default, 5=dim
+	stylePriority = [6]lipgloss.Style{
+		{}, // 0: unused
+		lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("1")),
+		lipgloss.NewStyle().Foreground(lipgloss.Color("3")),
+		lipgloss.NewStyle().Foreground(lipgloss.Color("2")),
+		lipgloss.NewStyle(),
+		lipgloss.NewStyle().Faint(true),
+	}
 )
 
 // ── types ────────────────────────────────────────────────────────────────────
@@ -202,12 +214,29 @@ func (m *model) refresh() {
 	m.rebuildRows()
 }
 
+// effectivePriority returns the sort key for a row's priority:
+// explicit priorities 1-5 sort first; 0 (unset) sorts last.
+func effectivePriority(p int) int {
+	if p == 0 {
+		return 6
+	}
+	return p
+}
+
 func (m *model) rebuildRows() {
 	m.rowItems = nil
 
 	for _, row := range m.dbState.CurrentDBRows {
 		m.rowItems = append(m.rowItems, rowItem{row: row})
 	}
+	// Sort direct rows by (effectivePriority, rank) so higher-priority rows
+	// always appear above lower-priority ones, with rank as the tiebreaker.
+	slices.SortStableFunc(m.rowItems, func(a, b rowItem) int {
+		if n := cmp.Compare(effectivePriority(a.row.Priority), effectivePriority(b.row.Priority)); n != 0 {
+			return n
+		}
+		return cmp.Compare(a.row.Rank, b.row.Rank)
+	})
 	for _, refTag := range m.dbState.SortedRefTagsKeys {
 		m.assignTagShortcut(refTag)
 		for _, row := range m.dbState.CurrentDBRefs[refTag] {
@@ -800,12 +829,23 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 	case "U":
 		m.applyRedo()
 
-	case "K": // move selected row up
+	case "K": // move selected row up within its priority group
 		if len(m.rowItems) == 0 || m.cursor == 0 || m.rowItems[m.cursor].isRef {
 			break
 		}
 		row := m.rowItems[m.cursor].row
-		rowID, fromRank, toRank := row.ID, m.cursor, m.cursor-1
+		// find the nearest non-ref item above with the same priority
+		prev := -1
+		for i := m.cursor - 1; i >= 0; i-- {
+			if !m.rowItems[i].isRef && m.rowItems[i].row.Priority == row.Priority {
+				prev = i
+				break
+			}
+		}
+		if prev == -1 {
+			break
+		}
+		rowID, fromRank, toRank := row.ID, row.Rank, m.rowItems[prev].row.Rank
 		_ = m.dbState.UpdateRowRank(rowID, toRank)
 		m.pushUndo(undoEntry{
 			desc:    "move row up",
@@ -822,14 +862,23 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 		m.refresh()
 		m.clampLineOffset()
 
-	case "J": // move selected row down
-		next := m.cursor + 1
-		if len(m.rowItems) == 0 || next >= len(m.rowItems) ||
-			m.rowItems[m.cursor].isRef || m.rowItems[next].isRef {
+	case "J": // move selected row down within its priority group
+		if len(m.rowItems) == 0 || m.cursor >= len(m.rowItems)-1 || m.rowItems[m.cursor].isRef {
 			break
 		}
 		row := m.rowItems[m.cursor].row
-		rowID, fromRank, toRank := row.ID, m.cursor, next
+		// find the nearest non-ref item below with the same priority
+		next := -1
+		for i := m.cursor + 1; i < len(m.rowItems); i++ {
+			if !m.rowItems[i].isRef && m.rowItems[i].row.Priority == row.Priority {
+				next = i
+				break
+			}
+		}
+		if next == -1 {
+			break
+		}
+		rowID, fromRank, toRank := row.ID, row.Rank, m.rowItems[next].row.Rank
 		_ = m.dbState.UpdateRowRank(rowID, toRank)
 		m.pushUndo(undoEntry{
 			desc:    "move row down",
@@ -864,6 +913,58 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 			m.cursor++
 		}
 		m.clampLineOffset()
+
+	case "!", "@", "#", "$", "%", ")":
+		if len(m.rowItems) == 0 || m.cursor >= len(m.rowItems) || m.rowItems[m.cursor].isRef {
+			break
+		}
+		priorityMap := map[string]int{"!": 1, "@": 2, "#": 3, "$": 4, "%": 5, ")": 0}
+		newPriority := priorityMap[msg.String()]
+		targets := m.collectTargets()
+		type priorChange struct {
+			id       int64
+			oldP, newP int
+		}
+		var changes []priorChange
+		for _, it := range targets {
+			old := it.row.Priority
+			p := newPriority
+			if newPriority != 0 && old == newPriority {
+				p = 0 // toggle off
+			}
+			if err := m.dbState.UpdateRowPriority(it.row.ID, p); err != nil {
+				m.setErr(err.Error())
+				break
+			}
+			changes = append(changes, priorChange{it.row.ID, old, p})
+		}
+		if len(changes) == 0 {
+			break
+		}
+		tagID, tagName := m.dbState.CurrentDBTag.ID, m.dbState.CurrentDBTag.Name
+		m.pushUndo(undoEntry{
+			desc:    fmt.Sprintf("set priority on %d row(s)", len(changes)),
+			tagID:   tagID,
+			tagName: tagName,
+			undoFn: func(exoDB *db.ExoDB) (int64, error) {
+				for _, c := range changes {
+					if err := exoDB.UpdateRowPriority(c.id, c.oldP); err != nil {
+						return 0, err
+					}
+				}
+				return changes[0].id, nil
+			},
+			redoFn: func(exoDB *db.ExoDB) (int64, error) {
+				for _, c := range changes {
+					if err := exoDB.UpdateRowPriority(c.id, c.newP); err != nil {
+						return 0, err
+					}
+				}
+				return changes[0].id, nil
+			},
+		})
+		m.selectedRows = make(map[int64]bool)
+		m.refresh()
 
 	case "i":
 		m.status = ""
@@ -1696,10 +1797,13 @@ func (m model) mainContentLines(innerW int) []string {
 		textW := max(innerW-prefixW-noteSuffixW, 1)
 		chunks := wrapText(item.row.Text, textW)
 
+		pri := item.row.Priority
 		if i == m.cursor {
 			var bullet string
 			if marked {
 				bullet = styleMarked.Render("◆") + " "
+			} else if pri >= 1 && pri <= 5 {
+				bullet = stylePriority[pri].Render("•") + " "
 			} else {
 				bullet = "• "
 			}
@@ -1720,9 +1824,13 @@ func (m model) mainContentLines(innerW int) []string {
 				lines = append(lines, raw)
 			}
 		} else {
-			firstBullet := "•"
+			var firstBullet string
 			if marked {
 				firstBullet = styleMarked.Render("◆")
+			} else if pri >= 1 && pri <= 5 {
+				firstBullet = stylePriority[pri].Render("•")
+			} else {
+				firstBullet = "•"
 			}
 			for ci, chunk := range chunks {
 				isLast := ci == len(chunks)-1
@@ -2045,7 +2153,8 @@ func (m model) viewHelp() string {
 		"   D          move to [[done]] (or all marked)",
 		"   y          yank selected row",
 		"   p / P      paste below / above cursor",
-		"   J / K      move row down / up",
+		"   J / K      move row down / up (within priority group)",
+		"   !@#$%      set priority 1-5 (repeat to clear), ) to clear",
 		"   u          undo last change",
 		"   U          redo last undone change",
 	}
