@@ -909,7 +909,7 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 		} else {
 			m.selectedRows[id] = true
 		}
-		if m.cursor < len(m.rowItems)-1 {
+		if m.cursor < len(m.rowItems)-1 && !m.rowItems[m.cursor+1].isRef {
 			m.cursor++
 		}
 		m.clampLineOffset()
