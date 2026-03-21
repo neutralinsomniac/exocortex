@@ -8,7 +8,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -38,7 +37,6 @@ const (
 	modeMain viewMode = iota
 	modeInput
 	modeTagSelect
-	modeCalendar
 	modeHelp
 	modeSearch
 )
@@ -133,9 +131,6 @@ type model struct {
 	acTags   []db.Tag
 	acCursor int
 
-	// calendar mode
-	calDate time.Time
-
 	// search mode
 	searchInput   textinput.Model
 	allSearchRows []searchResult
@@ -189,7 +184,7 @@ func newModel(exoDB *db.ExoDB) model {
 			return m
 		}
 	}
-	m.goToToday()
+	m.goToInbox()
 	return m
 }
 
@@ -329,10 +324,8 @@ func (m *model) switchTag(tag db.Tag) {
 	m.refresh()
 }
 
-func (m *model) goToToday() { m.goToDate(time.Now()) }
-
-func (m *model) goToDate(t time.Time) {
-	tag, err := m.dbState.AddTag(t.Format("January 02 2006"))
+func (m *model) goToInbox() {
+	tag, err := m.dbState.AddTag("inbox")
 	if err != nil {
 		m.setErr(err.Error())
 		return
@@ -364,15 +357,6 @@ func (m *model) popTag() {
 	m.refresh()
 	m.positionCursor(entry.rowID)
 	m.status = ""
-}
-
-func (m *model) moveDays(n int) {
-	d, err := time.Parse("January 02 2006", m.dbState.CurrentDBTag.Name)
-	if err != nil {
-		m.setErr("not on a date tag")
-		return
-	}
-	m.goToDate(d.AddDate(0, 0, n))
 }
 
 func (m *model) setErr(s string)    { m.status = s; m.isErr = true }
@@ -625,8 +609,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmd = m.handleInputKey(msg)
 		case modeTagSelect:
 			cmd = m.handleTagSelectKey(msg)
-		case modeCalendar:
-			cmd = m.handleCalendarKey(msg)
 		case modeHelp:
 			m.mode = modeMain
 		case modeSearch:
@@ -883,18 +865,12 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 		}
 		m.clampLineOffset()
 
-	case "g":
+	case "i":
 		m.status = ""
-		m.goToToday()
+		m.goToInbox()
 
 	case "b":
 		m.popTag()
-
-	case "<":
-		m.moveDays(-1)
-
-	case ">":
-		m.moveDays(1)
 
 	case "enter":
 		if len(m.rowItems) == 0 || m.cursor >= len(m.rowItems) {
@@ -1313,14 +1289,6 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 		m.updateFilteredTags()
 		return textinput.Blink
 
-	case "c":
-		d, err := time.Parse("January 02 2006", m.dbState.CurrentDBTag.Name)
-		if err != nil {
-			d = time.Now()
-		}
-		m.calDate = time.Date(d.Year(), d.Month(), d.Day(), 0, 0, 0, 0, d.Location())
-		m.mode = modeCalendar
-
 	case "?":
 		m.mode = modeHelp
 
@@ -1480,31 +1448,6 @@ func (m *model) handleSearchKey(msg tea.KeyMsg) tea.Cmd {
 	return cmd
 }
 
-func (m *model) handleCalendarKey(msg tea.KeyMsg) tea.Cmd {
-	switch msg.String() {
-	case "q", "esc":
-		m.mode = modeMain
-	case "enter":
-		m.goToDate(m.calDate)
-		m.mode = modeMain
-	case "g":
-		m.calDate = time.Now().Truncate(24 * time.Hour)
-	case "left", "h":
-		m.calDate = m.calDate.AddDate(0, 0, -1)
-	case "right", "l":
-		m.calDate = m.calDate.AddDate(0, 0, 1)
-	case "up", "k":
-		m.calDate = m.calDate.AddDate(0, 0, -7)
-	case "down", "j":
-		m.calDate = m.calDate.AddDate(0, 0, 7)
-	case "<":
-		m.calDate = m.calDate.AddDate(0, -1, 0)
-	case ">":
-		m.calDate = m.calDate.AddDate(0, 1, 0)
-	}
-	return nil
-}
-
 // ── views ────────────────────────────────────────────────────────────────────
 
 func (m model) View() string {
@@ -1518,8 +1461,6 @@ func (m model) View() string {
 		return m.viewInput()
 	case modeTagSelect:
 		return m.viewTagSelect()
-	case modeCalendar:
-		return m.viewCalendar()
 	case modeHelp:
 		return m.viewHelp()
 	case modeSearch:
@@ -2073,77 +2014,6 @@ func (m model) viewSearch() string {
 	return box + "\n" + m.statusLine() + "\n" + navHints
 }
 
-func (m model) viewCalendar() string {
-	tw := m.textW()
-	lc := m.lineCount(2)
-
-	today := time.Now()
-	year, month, _ := m.calDate.Date()
-
-	start := time.Date(year, month, 1, 0, 0, 0, 0, m.calDate.Location())
-	calRow := strings.Repeat("   ", int(start.Weekday()))
-	var calLines []string
-	calLines = append(calLines, "S  M  T  W  H  F  S")
-	for d := start; d.Month() == month; d = d.AddDate(0, 0, 1) {
-		isToday := d.Year() == today.Year() && d.Month() == today.Month() && d.Day() == today.Day()
-		isSelected := d.Year() == m.calDate.Year() && d.Month() == m.calDate.Month() && d.Day() == m.calDate.Day()
-		tagExists := m.allTagNames[d.Format("January 02 2006")]
-		s := fmt.Sprintf("%-3d", d.Day())
-		switch {
-		case isSelected:
-			s = styleSelected.Render(s)
-		case isToday:
-			s = styleHeader.Render(s)
-		case tagExists:
-			s = lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Render(s)
-		}
-		calRow += s
-		if d.Weekday() == time.Saturday {
-			calLines = append(calLines, calRow)
-			calRow = ""
-		}
-	}
-	if calRow != "" {
-		calLines = append(calLines, calRow)
-	}
-
-	// fetch rows for the selected day
-	dayLabel := m.calDate.Format("January 02 2006")
-	var dayRows []string
-	if tag, err := m.dbState.GetTagByName(dayLabel); err == nil && tag.ID != 0 {
-		if rows, err := m.dbState.GetRowsForTagID(tag.ID); err == nil {
-			for _, r := range rows {
-				dayRows = append(dayRows, " • "+r.Text)
-			}
-		}
-	}
-	if len(dayRows) == 0 {
-		dayRows = []string{styleDim.Render(" (no items)")}
-	}
-
-	header := []string{
-		styleHeader.Render(fmt.Sprintf(" %s %d", month.String()[:3], year)),
-		rule(tw, ""),
-		"",
-	}
-	calSection := calLines
-	calSection = append(calSection, "", rule(tw, dayLabel))
-	calSection = append(calSection, dayRows...)
-	content := fitLines(calSection, lc-len(header), tw)
-
-	box := m.bordered(2).Render(
-		boxContent(header, content, tw),
-	)
-	calHints := " " + styleDim.Render(
-		styleKey.Render("arrows")+" navigate  "+
-			styleKey.Render("<>")+" month  "+
-			styleKey.Render("enter")+" go to day  "+
-			styleKey.Render("g")+" today  "+
-			styleKey.Render("q/esc")+" back",
-	)
-	return box + "\n" + m.statusLine() + "\n" + calHints
-}
-
 func (m model) viewHelp() string {
 	tw := m.textW()
 	lc := m.lineCount(2)
@@ -2155,13 +2025,11 @@ func (m model) viewHelp() string {
 	}
 	helpLines := []string{
 		" " + styleKey.Render("[Tags]"),
-		"   g          go to today",
+		"   i          go to inbox",
 		"   n          new tag",
 		"   r          rename current tag",
 		"   t          tag selector (type to filter)",
 		"   /          fuzzy search all items",
-		"   c          calendar",
-		"   < >        prev/next day",
 		"   b          back in tag stack",
 		"   1-9        jump to tag reference",
 		"",
