@@ -86,6 +86,11 @@ type undoEntry struct {
 	// fns return the row ID that was created/modified (0 = no specific row, e.g. a deletion)
 	undoFn func(exoDB *db.ExoDB) (int64, error)
 	redoFn func(exoDB *db.ExoDB) (int64, error) // nil = not redoable
+	// postUndoCursorRank positions the cursor at a specific rank after undo,
+	// used when undoFn deletes a row (returns rowID=0). Only active when
+	// postUndoCursorRankSet is true.
+	postUndoCursorRank    int
+	postUndoCursorRankSet bool
 }
 
 // ── model ────────────────────────────────────────────────────────────────────
@@ -407,7 +412,11 @@ func (m *model) applyUndo() {
 	}
 	m.setStatus("undid: " + entry.desc)
 	m.refresh()
-	m.positionCursor(rowID)
+	if rowID != 0 {
+		m.positionCursor(rowID)
+	} else if entry.postUndoCursorRankSet {
+		m.positionCursorAtRank(entry.postUndoCursorRank)
+	}
 }
 
 func (m *model) applyRedo() {
@@ -433,6 +442,21 @@ func (m *model) applyRedo() {
 	m.setStatus("redid: " + entry.desc)
 	m.refresh()
 	m.positionCursor(rowID)
+}
+
+// positionCursorAtRank moves the cursor to the given rank (clamped to valid range).
+func (m *model) positionCursorAtRank(rank int) {
+	if len(m.rowItems) == 0 {
+		return
+	}
+	if rank < 0 {
+		rank = 0
+	}
+	if rank >= len(m.rowItems) {
+		rank = len(m.rowItems) - 1
+	}
+	m.cursor = rank
+	m.clampLineOffset()
 }
 
 // positionCursor moves the cursor to the row with the given ID, if present.
@@ -633,9 +657,11 @@ func (m *model) handleEditorDone(msg editorDoneMsg) tea.Cmd {
 		tagID, tagName, text := m.dbState.CurrentDBTag.ID, m.dbState.CurrentDBTag.Name, msg.text
 		var latestID int64 = row.ID
 		m.pushUndo(undoEntry{
-			desc:    "add row",
-			tagID:   tagID,
-			tagName: tagName,
+			desc:                  "add row",
+			tagID:                 tagID,
+			tagName:               tagName,
+			postUndoCursorRank:    max(0, rank-1),
+			postUndoCursorRankSet: true,
 			undoFn: func(exoDB *db.ExoDB) (int64, error) {
 				return 0, exoDB.DeleteRowByID(latestID)
 			},
@@ -666,9 +692,11 @@ func (m *model) handleEditorDone(msg editorDoneMsg) tea.Cmd {
 		tagID, tagName, text := m.dbState.CurrentDBTag.ID, m.dbState.CurrentDBTag.Name, msg.text
 		var latestID int64 = row.ID
 		m.pushUndo(undoEntry{
-			desc:    "insert row",
-			tagID:   tagID,
-			tagName: tagName,
+			desc:                  "insert row",
+			tagID:                 tagID,
+			tagName:               tagName,
+			postUndoCursorRank:    max(0, rank-1),
+			postUndoCursorRankSet: true,
 			undoFn: func(exoDB *db.ExoDB) (int64, error) {
 				return 0, exoDB.DeleteRowByID(latestID)
 			},
@@ -1200,18 +1228,20 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 			texts[i] = r.Text
 			notes[i] = r.Note
 		}
-		// Insert in reverse order so that after all rank-0 inserts the
-		// original order is preserved (each insert pushes the rest down).
+		baseRank := m.cursor
+		if m.cursor >= len(m.rowItems) || m.rowItems[m.cursor].isRef {
+			baseRank = 0
+		}
 		var pastedIDs []int64
 		errored := false
-		for i := len(texts) - 1; i >= 0; i-- {
-			newRow, err := m.dbState.AddRow(tagID, texts[i], 0)
+		for i, text := range texts {
+			newRow, err := m.dbState.AddRow(tagID, text, 0)
 			if err != nil {
 				m.setErr(err.Error())
 				errored = true
 				break
 			}
-			_ = m.dbState.UpdateRowRank(newRow.ID, 0)
+			_ = m.dbState.UpdateRowRank(newRow.ID, baseRank+i)
 			if notes[i] != "" {
 				_ = m.dbState.UpdateRowNote(newRow.ID, notes[i])
 			}
@@ -1221,7 +1251,7 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 			break
 		}
 		m.pushUndo(undoEntry{
-			desc:    fmt.Sprintf("paste %d row(s) at start", len(pastedIDs)),
+			desc:    fmt.Sprintf("paste %d row(s) above cursor", len(pastedIDs)),
 			tagID:   tagID,
 			tagName: tagName,
 			undoFn: func(exoDB *db.ExoDB) (int64, error) {
@@ -1238,18 +1268,20 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 				if err != nil {
 					return 0, err
 				}
-				for i := len(texts) - 1; i >= 0; i-- {
-					r, err := exoDB.AddRow(t.ID, texts[i], 0)
+				var lastID int64
+				for i, text := range texts {
+					r, err := exoDB.AddRow(t.ID, text, 0)
 					if err != nil {
 						return 0, err
 					}
-					_ = exoDB.UpdateRowRank(r.ID, 0)
+					_ = exoDB.UpdateRowRank(r.ID, baseRank+i)
 					if notes[i] != "" {
 						_ = exoDB.UpdateRowNote(r.ID, notes[i])
 					}
 					pastedIDs = append(pastedIDs, r.ID)
+					lastID = r.ID
 				}
-				return pastedIDs[len(pastedIDs)-1], nil
+				return lastID, nil
 			},
 		})
 		m.status = ""
@@ -2144,7 +2176,7 @@ func (m model) viewHelp() string {
 		"   d          cut selected row (or all marked)",
 		"   D          move to [[done]] (or all marked)",
 		"   y          yank selected row",
-		"   p / P      paste to end / beginning",
+		"   p / P      paste below / above cursor",
 		"   J / K      move row down / up",
 		"   u          undo last change",
 		"   U          redo last undone change",
