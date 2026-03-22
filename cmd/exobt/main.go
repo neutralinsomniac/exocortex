@@ -146,7 +146,7 @@ type model struct {
 	textInput     textinput.Model
 	pendingAction pendingAction
 	pendingRow    db.Row
-	pendingRank   int // rank at which the pending add/insert should land
+	pendingRank int // rank at which the pending add/insert should land
 
 	// tag select mode
 	tagInput     textinput.Model
@@ -323,6 +323,38 @@ func (m *model) afterCursorRank() int {
 		}
 	}
 	return n
+}
+
+// makeRoomForRank ensures no existing row with the given priority occupies
+// targetRank. If one does, all same-priority rows with rank >= targetRank are
+// shifted up by one (in descending order to avoid transient conflicts).
+func (m *model) makeRoomForRank(priority, targetRank int) {
+	occupied := false
+	for _, it := range m.rowItems {
+		if !it.isRef && it.row.Priority == priority && it.row.Rank == targetRank {
+			occupied = true
+			break
+		}
+	}
+	if !occupied {
+		return
+	}
+	type rowShift struct {
+		id   int64
+		rank int
+	}
+	var toShift []rowShift
+	for _, it := range m.rowItems {
+		if !it.isRef && it.row.Priority == priority && it.row.Rank >= targetRank {
+			toShift = append(toShift, rowShift{it.row.ID, it.row.Rank})
+		}
+	}
+	slices.SortFunc(toShift, func(a, b rowShift) int {
+		return cmp.Compare(b.rank, a.rank) // descending to avoid conflicts
+	})
+	for _, r := range toShift {
+		_ = m.dbState.UpdateRowRank(r.id, r.rank+1)
+	}
 }
 
 // rowTagContext returns the tag ID and name that owns item: the current tag
@@ -735,6 +767,7 @@ func (m *model) handleEditorDone(msg editorDoneMsg) tea.Cmd {
 			return nil
 		}
 		rank := m.pendingRank
+		m.makeRoomForRank(0, rank)
 		_ = m.dbState.UpdateRowRank(row.ID, rank)
 		tagID, tagName, text := m.dbState.CurrentDBTag.ID, m.dbState.CurrentDBTag.Name, msg.text
 		var latestID int64 = row.ID
@@ -770,6 +803,7 @@ func (m *model) handleEditorDone(msg editorDoneMsg) tea.Cmd {
 			return nil
 		}
 		rank := m.pendingRank
+		m.makeRoomForRank(0, rank)
 		_ = m.dbState.UpdateRowRank(row.ID, rank)
 		tagID, tagName, text := m.dbState.CurrentDBTag.ID, m.dbState.CurrentDBTag.Name, msg.text
 		var latestID int64 = row.ID
@@ -1210,9 +1244,18 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 		}
 		targets := m.collectTargets()
 		type doneChange struct {
-			id       int64
-			prev     bool
-			next     bool
+			id      int64
+			prev    bool
+			next    bool
+			oldRank int
+			newRank int
+		}
+		// Compute max rank across all rows so un-done rows go to end of list.
+		maxRank := 0
+		for _, it := range m.rowItems {
+			if !it.isRef && it.row.Rank > maxRank {
+				maxRank = it.row.Rank
+			}
 		}
 		var changes []doneChange
 		errored := false
@@ -1226,7 +1269,14 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 				errored = true
 				break
 			}
-			changes = append(changes, doneChange{it.row.ID, it.row.Done, next})
+			c := doneChange{id: it.row.ID, prev: it.row.Done, next: next, oldRank: it.row.Rank}
+			if !next {
+				// Marking un-done: move to end of list.
+				maxRank++
+				c.newRank = maxRank
+				_ = m.dbState.UpdateRowRank(it.row.ID, c.newRank)
+			}
+			changes = append(changes, c)
 		}
 		if errored || len(changes) == 0 {
 			break
@@ -1241,6 +1291,11 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 					if err := exoDB.UpdateRowDone(c.id, c.prev); err != nil {
 						return 0, err
 					}
+					if !c.next {
+						if err := exoDB.UpdateRowRank(c.id, c.oldRank); err != nil {
+							return 0, err
+						}
+					}
 				}
 				return changes[0].id, nil
 			},
@@ -1248,6 +1303,11 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 				for _, c := range changes {
 					if err := exoDB.UpdateRowDone(c.id, c.next); err != nil {
 						return 0, err
+					}
+					if !c.next {
+						if err := exoDB.UpdateRowRank(c.id, c.newRank); err != nil {
+							return 0, err
+						}
 					}
 				}
 				return changes[0].id, nil
