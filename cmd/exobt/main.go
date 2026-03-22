@@ -1016,6 +1016,9 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 		m.refresh()
 		m.clampLineOffset()
 
+	case ";":
+		m.selectedRows = make(map[int64]bool)
+
 	case " ":
 		if len(m.rowItems) == 0 || m.cursor >= len(m.rowItems) {
 			break
@@ -2331,6 +2334,7 @@ func (m model) viewHelp() string {
 		"   o          add row below cursor",
 		"   O          insert row above cursor",
 		"   space       toggle row in/out of selection",
+		"   ;           clear selection",
 		"   e          edit selected row",
 		"   N          add/edit note on selected row",
 		"   d          cut selected row (or all marked)",
