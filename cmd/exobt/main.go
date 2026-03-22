@@ -418,7 +418,12 @@ func (m *model) applyUndo() {
 		m.redoStack = append(m.redoStack, entry)
 	}
 	// Navigate to the tag where the change occurred, recreating it if auto-deleted.
-	if tag := m.resolveUndoTag(entry); tag.ID != 0 {
+	if tag := m.resolveUndoTag(entry); tag.ID != 0 && tag.ID != m.dbState.CurrentDBTag.ID {
+		var rowID int64
+		if m.cursor < len(m.rowItems) {
+			rowID = m.rowItems[m.cursor].row.ID
+		}
+		m.tagStack = append(m.tagStack, tagStackEntry{tagName: m.dbState.CurrentDBTag.Name, rowID: rowID})
 		m.dbState.CurrentDBTag = tag
 		m.cursor = 0
 		m.lineOffset = 0
@@ -447,7 +452,12 @@ func (m *model) applyRedo() {
 	}
 	m.undoStack = append(m.undoStack, entry)
 	// Navigate to the tag where the change occurred, recreating it if auto-deleted.
-	if tag := m.resolveUndoTag(entry); tag.ID != 0 {
+	if tag := m.resolveUndoTag(entry); tag.ID != 0 && tag.ID != m.dbState.CurrentDBTag.ID {
+		var rowID int64
+		if m.cursor < len(m.rowItems) {
+			rowID = m.rowItems[m.cursor].row.ID
+		}
+		m.tagStack = append(m.tagStack, tagStackEntry{tagName: m.dbState.CurrentDBTag.Name, rowID: rowID})
 		m.dbState.CurrentDBTag = tag
 		m.cursor = 0
 		m.lineOffset = 0
@@ -455,6 +465,21 @@ func (m *model) applyRedo() {
 	m.setStatus("redid: " + entry.desc)
 	m.refresh()
 	m.positionCursor(rowID)
+}
+
+// clampCursorToDirectRows moves the cursor back to the last non-ref row if it
+// is currently sitting on a ref row (e.g. after the last direct row was deleted).
+func (m *model) clampCursorToDirectRows() {
+	if m.cursor < len(m.rowItems) && !m.rowItems[m.cursor].isRef {
+		return
+	}
+	for i := m.cursor - 1; i >= 0; i-- {
+		if !m.rowItems[i].isRef {
+			m.cursor = i
+			m.clampLineOffset()
+			return
+		}
+	}
 }
 
 // positionCursorAtRank moves the cursor to the given rank (clamped to valid range).
@@ -1130,6 +1155,7 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 		m.selectedRows = make(map[int64]bool)
 		m.setStatus(fmt.Sprintf("cut %d row(s)", len(saved)))
 		m.refresh()
+		m.clampCursorToDirectRows()
 
 	case "D":
 		if len(m.rowItems) == 0 {
