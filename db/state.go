@@ -22,6 +22,12 @@ func (s *State) Refresh() error {
 		goto End
 	}
 
+	if s.CurrentDBTag.ID != 0 {
+		if tag, tagErr := s.GetTagByID(s.CurrentDBTag.ID); tagErr == nil {
+			s.CurrentDBTag = tag
+		}
+	}
+
 	s.CurrentDBRows, err = s.GetRowsForTagID(s.CurrentDBTag.ID)
 	if err != nil {
 		goto End
