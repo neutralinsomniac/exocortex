@@ -1971,7 +1971,7 @@ func (m model) mainContentLines(innerW int) []string {
 		animating := m.animRowID != 0 && item.row.ID == m.animRowID
 		// Build priority tag: "[X] " (4 cols) or "    " when unset/ref.
 		priTag := styleDim.Render("-") + " "
-		if !item.isRef && pri >= 1 && pri <= 5 {
+		if pri >= 1 && pri <= 5 {
 			priTag = stylePriority[pri].Render(fmt.Sprintf("%d", pri)) + " "
 		}
 		if i == m.cursor {
