@@ -1187,6 +1187,19 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 		}
 		selSnap := m.snapshotSelection()
 		targets := m.collectTargets()
+		// Find the first non-deleted row at or after the cursor to land on.
+		deletedIDs := make(map[int64]bool, len(targets))
+		for _, t := range targets {
+			deletedIDs[t.row.ID] = true
+		}
+		var landRowID int64
+		for i := m.cursor; i < len(m.rowItems); i++ {
+			it := m.rowItems[i]
+			if !it.isRef && !deletedIDs[it.row.ID] {
+				landRowID = it.row.ID
+				break
+			}
+		}
 		// Save info needed for undo before deleting.
 		type savedRow struct {
 			tagID    int64
@@ -1262,7 +1275,11 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 		m.selectedRows = make(map[int64]bool)
 		m.setStatus(fmt.Sprintf("cut %d row(s)", len(saved)))
 		m.refresh()
-		m.clampCursorToDirectRows()
+		if landRowID != 0 {
+			m.positionCursor(landRowID)
+		} else {
+			m.clampCursorToDirectRows()
+		}
 
 	case "D":
 		if len(m.rowItems) == 0 {
