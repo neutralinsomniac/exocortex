@@ -111,6 +111,11 @@ type undoEntry struct {
 	// postUndoCursorRankSet is true.
 	postUndoCursorRank    int
 	postUndoCursorRankSet bool
+	// postUndoSelection restores a multi-selection after undo, if non-empty.
+	postUndoSelection map[int64]bool
+	// postUndoSelectionFn, if set, is called after undoFn runs to get the
+	// selection to restore. Takes precedence over postUndoSelection.
+	postUndoSelectionFn func() map[int64]bool
 }
 
 // ── model ────────────────────────────────────────────────────────────────────
@@ -367,6 +372,19 @@ func (m *model) rowTagContext(item rowItem) (int64, string) {
 	return m.dbState.CurrentDBTag.ID, m.dbState.CurrentDBTag.Name
 }
 
+// snapshotSelection returns a copy of selectedRows if non-empty, else nil.
+// Used to capture the selection for undo restoration.
+func (m *model) snapshotSelection() map[int64]bool {
+	if len(m.selectedRows) == 0 {
+		return nil
+	}
+	snap := make(map[int64]bool, len(m.selectedRows))
+	for id, v := range m.selectedRows {
+		snap[id] = v
+	}
+	return snap
+}
+
 // collectTargets returns the rowItems to operate on: selected rows if any are
 // marked, otherwise just the cursor row.
 func (m *model) collectTargets() []rowItem {
@@ -498,6 +516,13 @@ func (m *model) applyUndo() {
 		m.positionCursor(rowID)
 	} else if entry.postUndoCursorRankSet {
 		m.positionCursorAtRank(entry.postUndoCursorRank)
+	}
+	if entry.postUndoSelectionFn != nil {
+		if sel := entry.postUndoSelectionFn(); len(sel) > 0 {
+			m.selectedRows = sel
+		}
+	} else if len(entry.postUndoSelection) > 0 {
+		m.selectedRows = entry.postUndoSelection
 	}
 }
 
@@ -1026,6 +1051,7 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 		}
 		priorityMap := map[string]int{"!": 1, "@": 2, "#": 3, "$": 4, "%": 5, ")": 0}
 		newPriority := priorityMap[msg.String()]
+		selSnap := m.snapshotSelection()
 		targets := m.collectTargets()
 		type priorChange struct {
 			id       int64
@@ -1049,9 +1075,10 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 		}
 		tagID, tagName := m.dbState.CurrentDBTag.ID, m.dbState.CurrentDBTag.Name
 		m.pushUndo(undoEntry{
-			desc:    fmt.Sprintf("set priority on %d row(s)", len(changes)),
-			tagID:   tagID,
-			tagName: tagName,
+			desc:              fmt.Sprintf("set priority on %d row(s)", len(changes)),
+			tagID:             tagID,
+			tagName:           tagName,
+			postUndoSelection: selSnap,
 			undoFn: func(exoDB *db.ExoDB) (int64, error) {
 				for _, c := range changes {
 					if err := exoDB.UpdateRowPriority(c.id, c.oldP); err != nil {
@@ -1165,29 +1192,21 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 			m.setErr("no row selected")
 			break
 		}
+		selSnap := m.snapshotSelection()
 		targets := m.collectTargets()
 		// Save info needed for undo before deleting.
 		type savedRow struct {
-			tagID   int64
-			tagName string
-			text    string
-			note    string
-			rank    int
+			tagID    int64
+			tagName  string
+			text     string
+			note     string
+			rank     int
+			priority int
 		}
 		var saved []savedRow
-		for idx, it := range targets {
+		for _, it := range targets {
 			tagID, tagName := m.rowTagContext(it)
-			// Rank approximation: position in rowItems minus ref rows before it.
-			rank := idx
-			for _, ri := range m.rowItems {
-				if ri.row.ID == it.row.ID {
-					break
-				}
-				if !ri.isRef {
-					rank++
-				}
-			}
-			saved = append(saved, savedRow{tagID, tagName, it.row.Text, it.row.Note, rank})
+			saved = append(saved, savedRow{tagID, tagName, it.row.Text, it.row.Note, it.row.Rank, it.row.Priority})
 			if err := m.dbState.DeleteRowByID(it.row.ID); err != nil {
 				m.setErr(err.Error())
 				break
@@ -1199,10 +1218,21 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 		}
 		// Single undo entry restores all deleted rows.
 		var restoredIDs []int64
+		hadSelection := selSnap != nil
 		m.pushUndo(undoEntry{
 			desc:    fmt.Sprintf("cut %d row(s)", len(saved)),
 			tagID:   saved[0].tagID,
 			tagName: saved[0].tagName,
+			postUndoSelectionFn: func() map[int64]bool {
+				if !hadSelection || len(restoredIDs) <= 1 {
+					return nil
+				}
+				sel := make(map[int64]bool, len(restoredIDs))
+				for _, id := range restoredIDs {
+					sel[id] = true
+				}
+				return sel
+			},
 			undoFn: func(exoDB *db.ExoDB) (int64, error) {
 				restoredIDs = restoredIDs[:0]
 				var lastID int64
@@ -1216,6 +1246,9 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 						return 0, err
 					}
 					_ = exoDB.UpdateRowRank(newRow.ID, s.rank)
+					if s.priority != 0 {
+						_ = exoDB.UpdateRowPriority(newRow.ID, s.priority)
+					}
 					if s.note != "" {
 						_ = exoDB.UpdateRowNote(newRow.ID, s.note)
 					}
@@ -1243,6 +1276,7 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 			m.setErr("no row selected")
 			break
 		}
+		selSnap := m.snapshotSelection()
 		targets := m.collectTargets()
 		type doneChange struct {
 			id      int64
@@ -1284,9 +1318,10 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 		}
 		tagID, tagName := m.dbState.CurrentDBTag.ID, m.dbState.CurrentDBTag.Name
 		m.pushUndo(undoEntry{
-			desc:    fmt.Sprintf("toggle done on %d row(s)", len(changes)),
-			tagID:   tagID,
-			tagName: tagName,
+			desc:              fmt.Sprintf("toggle done on %d row(s)", len(changes)),
+			tagID:             tagID,
+			tagName:           tagName,
+			postUndoSelection: selSnap,
 			undoFn: func(exoDB *db.ExoDB) (int64, error) {
 				for _, c := range changes {
 					if err := exoDB.UpdateRowDone(c.id, c.prev); err != nil {
