@@ -1089,8 +1089,10 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 				return changes[0].id, nil
 			},
 		})
+		cursorID := m.rowItems[m.cursor].row.ID
 		m.selectedRows = make(map[int64]bool)
 		m.refresh()
+		m.positionCursor(cursorID)
 
 	case "i":
 		m.status = ""
