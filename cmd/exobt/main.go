@@ -1932,7 +1932,7 @@ func (m model) mainContentLines(innerW int) []string {
 			if marked {
 				bullet = styleMarked.Render("◆") + " "
 			} else if done && !animating {
-				bullet = styleDone.Render("✓") + " "
+				bullet = styleDoneCheck.Render("✓") + " "
 			} else {
 				bullet = "• "
 			}
@@ -1972,7 +1972,7 @@ func (m model) mainContentLines(innerW int) []string {
 			if marked {
 				firstBullet = styleMarked.Render("◆")
 			} else if done && !animating {
-				firstBullet = styleDone.Render("✓")
+				firstBullet = styleDoneCheck.Render("✓")
 			} else {
 				firstBullet = "•"
 			}
