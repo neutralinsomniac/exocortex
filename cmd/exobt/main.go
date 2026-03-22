@@ -33,7 +33,7 @@ var (
 
 	styleDone = lipgloss.NewStyle().Faint(true).Strikethrough(true)
 
-	// priority bullet styles: 1=red, 2=yellow, 3=green, 4=default, 5=dim
+	// priority tag styles: 1=red bold, 2=yellow, 3=green, 4=default, 5=dim
 	stylePriority = [6]lipgloss.Style{
 		{}, // 0: unused
 		lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("1")),
@@ -1847,7 +1847,8 @@ func (m model) mainContentLines(innerW int) []string {
 		hasNote := !item.isRef && item.row.Note != ""
 
 		// Calculate widths for wrapping.
-		prefixW := ansi.StringWidth(indent) + 2 // bullet is always 2 display cols
+		// prefix = indent + priority tag (2 cols: "X " or "- ") + bullet (2 cols: "• ")
+		prefixW := ansi.StringWidth(indent) + 2 + 2
 		contIndent := strings.Repeat(" ", prefixW)
 		noteSuffixW := 0
 		if hasNote {
@@ -1859,14 +1860,17 @@ func (m model) mainContentLines(innerW int) []string {
 		pri := item.row.Priority
 		done := item.row.Done
 		animating := m.animRowID != 0 && item.row.ID == m.animRowID
+		// Build priority tag: "[X] " (4 cols) or "    " when unset/ref.
+		priTag := styleDim.Render("-") + " "
+		if !item.isRef && pri >= 1 && pri <= 5 {
+			priTag = stylePriority[pri].Render(fmt.Sprintf("%d", pri)) + " "
+		}
 		if i == m.cursor {
 			var bullet string
 			if marked {
 				bullet = styleMarked.Render("◆") + " "
 			} else if done && !animating {
 				bullet = styleDone.Render("✓") + " "
-			} else if pri >= 1 && pri <= 5 {
-				bullet = stylePriority[pri].Render("•") + " "
 			} else {
 				bullet = "• "
 			}
@@ -1874,7 +1878,7 @@ func (m model) mainContentLines(innerW int) []string {
 				isLast := ci == len(chunks)-1
 				pfx := contIndent
 				if ci == 0 {
-					pfx = indent + bullet
+					pfx = indent + priTag + bullet
 				}
 				noteSuffix := ""
 				if isLast && hasNote {
@@ -1907,8 +1911,6 @@ func (m model) mainContentLines(innerW int) []string {
 				firstBullet = styleMarked.Render("◆")
 			} else if done && !animating {
 				firstBullet = styleDone.Render("✓")
-			} else if pri >= 1 && pri <= 5 {
-				firstBullet = stylePriority[pri].Render("•")
 			} else {
 				firstBullet = "•"
 			}
@@ -1921,7 +1923,7 @@ func (m model) mainContentLines(innerW int) []string {
 				pfx := contIndent
 				bullet := " "
 				if ci == 0 {
-					pfx = indent
+					pfx = indent + priTag
 					bullet = firstBullet
 				}
 				var text string
@@ -1962,7 +1964,7 @@ func (m model) cursorLineRange(innerW int) (first, last int) {
 		if item.isRef {
 			indent = "   "
 		}
-		prefixW := ansi.StringWidth(indent) + 2
+		prefixW := ansi.StringWidth(indent) + 2 + 2 // priority tag (2) + bullet (2)
 		noteSuffixW := 0
 		if !item.isRef && item.row.Note != "" {
 			noteSuffixW = 2
