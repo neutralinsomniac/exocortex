@@ -31,7 +31,8 @@ var (
 	styleDim       = lipgloss.NewStyle().Faint(true)
 	styleKey       = lipgloss.NewStyle().Bold(true)
 
-	styleDone = lipgloss.NewStyle().Faint(true).Strikethrough(true)
+	styleDone      = lipgloss.NewStyle().Faint(true).Strikethrough(true)
+	styleDoneCheck = lipgloss.NewStyle().Faint(true)
 
 	// priority tag styles: 1=red bold, 2=yellow, 3=green, 4=default, 5=dim
 	stylePriority = [6]lipgloss.Style{
@@ -1722,15 +1723,16 @@ func rule(w int, label string) string {
 func (m model) hints() string {
 	return " " + styleDim.Render(strings.Join([]string{
 		styleKey.Render("j/k") + " nav",
-		styleKey.Render("enter") + " follow",
-		styleKey.Render("a") + " add",
+		styleKey.Render("J/K") + " move",
+		styleKey.Render("o/O") + " add",
 		styleKey.Render("d") + " cut",
+		styleKey.Render("p") + " paste",
+		styleKey.Render("D") + " done",
 		styleKey.Render("e") + " edit",
 		styleKey.Render("u/U") + " undo/redo",
 		styleKey.Render("/") + " search",
 		styleKey.Render("t") + " tags",
-		styleKey.Render("g") + " today",
-		styleKey.Render("b") + " back",
+		styleKey.Render("ctrl-t") + " back",
 		styleKey.Render("?") + " help",
 		styleKey.Render("q") + " quit",
 	}, "  "))
