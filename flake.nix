@@ -29,7 +29,9 @@
           inherit src vendorHash;
         };
       in
-      {
+      rec {
+        packages.default = packages.exo;
+
         packages.exo = pkgs.buildGoModule {
           name = "exo";
           version = "1.1.0";
