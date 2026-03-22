@@ -889,10 +889,28 @@ func (m *model) handleEditorDone(msg editorDoneMsg) tea.Cmd {
 		m.status = ""
 		m.refresh()
 	case actionNewTag:
-		tag, err := m.dbState.AddTag(msg.text)
+		prevTag := m.dbState.CurrentDBTag
+		newTagName := msg.text
+		isNew := !m.allTagNames[newTagName]
+		tag, err := m.dbState.AddTag(newTagName)
 		if err != nil {
 			m.setErr(err.Error())
 			return nil
+		}
+		if isNew {
+			newTagID := tag.ID
+			m.pushUndo(undoEntry{
+				desc:    "new tag",
+				tagID:   prevTag.ID,
+				tagName: prevTag.Name,
+				undoFn: func(exoDB *db.ExoDB) (int64, error) {
+					return 0, exoDB.DeleteTagByID(newTagID)
+				},
+				redoFn: func(exoDB *db.ExoDB) (int64, error) {
+					_, err := exoDB.AddTag(newTagName)
+					return 0, err
+				},
+			})
 		}
 		m.status = ""
 		m.switchTag(tag)
