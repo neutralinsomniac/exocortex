@@ -15,6 +15,7 @@ type Row struct {
 	UpdatedTS   int64
 	Note        string
 	Priority    int
+	Done        bool
 }
 
 func sqlGetRowByID(tx *sql.Tx, id int64) (Row, error) {
@@ -22,9 +23,9 @@ func sqlGetRowByID(tx *sql.Tx, id int64) (Row, error) {
 	var sqlRow *sql.Row
 	var err error
 
-	sqlRow = tx.QueryRow("SELECT id, tag_id, text, rank, parent_row_id, updated_ts, note, priority FROM row WHERE id = $1", id)
+	sqlRow = tx.QueryRow("SELECT id, tag_id, text, rank, parent_row_id, updated_ts, note, priority, done FROM row WHERE id = $1", id)
 
-	err = sqlRow.Scan(&row.ID, &row.TagID, &row.Text, &row.Rank, &row.ParentRowID, &row.UpdatedTS, &row.Note, &row.Priority)
+	err = sqlRow.Scan(&row.ID, &row.TagID, &row.Text, &row.Rank, &row.ParentRowID, &row.UpdatedTS, &row.Note, &row.Priority, &row.Done)
 	if err != nil {
 		goto End
 	}
@@ -95,7 +96,7 @@ func sqlGetRowsForTagID(tx *sql.Tx, tagID int64) ([]Row, error) {
 	var sqlRows *sql.Rows
 	var err error
 
-	sqlRows, err = tx.Query("SELECT id, tag_id, rank, text, parent_row_id, updated_ts, note, priority FROM row WHERE tag_id = $1 ORDER BY rank, id", tagID)
+	sqlRows, err = tx.Query("SELECT id, tag_id, rank, text, parent_row_id, updated_ts, note, priority, done FROM row WHERE tag_id = $1 ORDER BY rank, id", tagID)
 	if err != nil {
 		goto End
 	}
@@ -103,7 +104,7 @@ func sqlGetRowsForTagID(tx *sql.Tx, tagID int64) ([]Row, error) {
 
 	for sqlRows.Next() {
 		var row Row
-		err = sqlRows.Scan(&row.ID, &row.TagID, &row.Rank, &row.Text, &row.ParentRowID, &row.UpdatedTS, &row.Note, &row.Priority)
+		err = sqlRows.Scan(&row.ID, &row.TagID, &row.Rank, &row.Text, &row.ParentRowID, &row.UpdatedTS, &row.Note, &row.Priority, &row.Done)
 		if err != nil {
 			goto End
 		}
@@ -419,6 +420,25 @@ func (e *ExoDB) UpdateRowPriority(rowID int64, priority int) error {
 	}
 
 	_, err = tx.Exec("UPDATE row SET priority = ?, updated_ts = ? WHERE id = ?", priority, time.Now().UnixNano(), rowID)
+	if err != nil {
+		goto End
+	}
+
+End:
+	sqlCommitOrRollback(tx, err)
+	return err
+}
+
+func (e *ExoDB) UpdateRowDone(rowID int64, done bool) error {
+	var tx *sql.Tx
+	var err error
+
+	tx, err = e.conn.Begin()
+	if err != nil {
+		goto End
+	}
+
+	_, err = tx.Exec("UPDATE row SET done = ?, updated_ts = ? WHERE id = ?", done, time.Now().UnixNano(), rowID)
 	if err != nil {
 		goto End
 	}

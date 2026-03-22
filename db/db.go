@@ -23,6 +23,7 @@ func (e *ExoDB) Migrate() error {
 		`ALTER TABLE row ADD COLUMN note TEXT NOT NULL DEFAULT ''`,
 		`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '')`,
 		`ALTER TABLE row ADD COLUMN priority INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE row ADD COLUMN done INTEGER NOT NULL DEFAULT 0`,
 	}
 	for _, m := range migrations {
 		if _, err := e.conn.Exec(m); err != nil {

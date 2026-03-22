@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -29,6 +30,8 @@ var (
 	styleOK        = lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
 	styleDim       = lipgloss.NewStyle().Faint(true)
 	styleKey       = lipgloss.NewStyle().Bold(true)
+
+	styleDone = lipgloss.NewStyle().Faint(true).Strikethrough(true)
 
 	// priority bullet styles: 1=red, 2=yellow, 3=green, 4=default, 5=dim
 	stylePriority = [6]lipgloss.Style{
@@ -77,6 +80,12 @@ type searchResult struct {
 	matchEnd   int // rune index of match end (exclusive)
 }
 
+type doneAnimTickMsg struct{}
+
+func doneAnimTick() tea.Cmd {
+	return tea.Tick(10*time.Millisecond, func(time.Time) tea.Msg { return doneAnimTickMsg{} })
+}
+
 type editorDoneMsg struct {
 	text   string
 	action pendingAction
@@ -118,7 +127,13 @@ type model struct {
 	selectedRows map[int64]bool // row IDs in the multi-select set
 
 	snarfedRows []db.Row
+	hideDone    bool // when true, done items are hidden entirely
 	tagStack    []tagStackEntry
+
+	// done animation
+	animRowID  int64  // row currently animating (0 = none)
+	animText   string // original text of the animating row
+	animPos    int    // strikethrough has drawn through this many runes
 	undoStack   []undoEntry
 	redoStack   []undoEntry
 
@@ -182,6 +197,7 @@ func newModel(exoDB *db.ExoDB) model {
 		textInput:       ti,
 		tagInput:        tagi,
 		searchInput:     si,
+		hideDone:        true,
 		tagShortcuts:    make(map[db.Tag]int),
 		tagShortcutsRev: make(map[int]db.Tag),
 		tagNameToNum:    make(map[string]int),
@@ -227,11 +243,23 @@ func (m *model) rebuildRows() {
 	m.rowItems = nil
 
 	for _, row := range m.dbState.CurrentDBRows {
+		if m.hideDone && row.Done {
+			continue
+		}
 		m.rowItems = append(m.rowItems, rowItem{row: row})
 	}
-	// Sort direct rows by (effectivePriority, rank) so higher-priority rows
-	// always appear above lower-priority ones, with rank as the tiebreaker.
+	// Sort direct rows: not-done before done, then by priority, then by rank.
 	slices.SortStableFunc(m.rowItems, func(a, b rowItem) int {
+		aDone, bDone := 0, 0
+		if a.row.Done {
+			aDone = 1
+		}
+		if b.row.Done {
+			bDone = 1
+		}
+		if n := cmp.Compare(aDone, bDone); n != 0 {
+			return n
+		}
 		if n := cmp.Compare(effectivePriority(a.row.Priority), effectivePriority(b.row.Priority)); n != 0 {
 			return n
 		}
@@ -240,6 +268,9 @@ func (m *model) rebuildRows() {
 	for _, refTag := range m.dbState.SortedRefTagsKeys {
 		m.assignTagShortcut(refTag)
 		for _, row := range m.dbState.CurrentDBRefs[refTag] {
+			if m.hideDone && row.Done {
+				continue
+			}
 			m.rowItems = append(m.rowItems, rowItem{
 				row: row, isRef: true, refTag: refTag,
 			})
@@ -283,7 +314,7 @@ func (m *model) setInputWidth() {
 // row (or the list is empty) the row is appended after all direct rows.
 func (m *model) afterCursorRank() int {
 	if m.cursor < len(m.rowItems) && !m.rowItems[m.cursor].isRef {
-		return m.cursor + 1
+		return m.rowItems[m.cursor].row.Rank + 1
 	}
 	n := 0
 	for _, it := range m.rowItems {
@@ -652,6 +683,21 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width, m.height = msg.Width, msg.Height
 		if m.mode == modeInput {
 			m.setInputWidth()
+		}
+	case doneAnimTickMsg:
+		if m.animRowID != 0 {
+			runes := []rune(m.animText)
+			step := max(1, len(runes)/10)
+			m.animPos += step
+			if m.animPos >= len(runes) {
+				m.animRowID = 0
+				m.animText = ""
+				m.animPos = 0
+				m.refresh()
+				m.clampCursorToDirectRows()
+			} else {
+				cmd = doneAnimTick()
+			}
 		}
 	case editorDoneMsg:
 		cmd = m.handleEditorDone(msg)
@@ -1044,7 +1090,7 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 		m.mode = modeInput
 		m.pendingAction = actionInsertRow
 		if m.cursor < len(m.rowItems) && !m.rowItems[m.cursor].isRef {
-			m.pendingRank = m.cursor
+			m.pendingRank = m.rowItems[m.cursor].row.Rank
 		} else {
 			m.pendingRank = 0
 		}
@@ -1163,81 +1209,64 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 			break
 		}
 		targets := m.collectTargets()
-		doneTag, err := m.dbState.AddTag("done")
-		if err != nil {
-			m.setErr(err.Error())
-			break
+		type doneChange struct {
+			id       int64
+			prev     bool
+			next     bool
 		}
-		type doneRow struct {
-			rowID       int64
-			fromTagID   int64
-			fromTagName string
-			origText    string
-			newText     string
-		}
-		var doneRows []doneRow
+		var changes []doneChange
 		errored := false
 		for _, it := range targets {
-			fromTagID, fromTagName := m.rowTagContext(it)
-			origText := it.row.Text
-			newText := origText + " [[" + fromTagName + "]]"
-			if err := m.dbState.MoveRowToTag(it.row.ID, doneTag.ID); err != nil {
+			if it.isRef {
+				continue
+			}
+			next := !it.row.Done
+			if err := m.dbState.UpdateRowDone(it.row.ID, next); err != nil {
 				m.setErr(err.Error())
 				errored = true
 				break
 			}
-			if err := m.dbState.UpdateRowText(it.row.ID, newText); err != nil {
-				m.setErr(err.Error())
-				errored = true
-				break
-			}
-			doneRows = append(doneRows, doneRow{it.row.ID, fromTagID, fromTagName, origText, newText})
+			changes = append(changes, doneChange{it.row.ID, it.row.Done, next})
 		}
-		if errored {
+		if errored || len(changes) == 0 {
 			break
 		}
+		tagID, tagName := m.dbState.CurrentDBTag.ID, m.dbState.CurrentDBTag.Name
 		m.pushUndo(undoEntry{
-			desc:    fmt.Sprintf("move %d row(s) to done", len(doneRows)),
-			tagID:   doneRows[0].fromTagID,
-			tagName: doneRows[0].fromTagName,
+			desc:    fmt.Sprintf("toggle done on %d row(s)", len(changes)),
+			tagID:   tagID,
+			tagName: tagName,
 			undoFn: func(exoDB *db.ExoDB) (int64, error) {
-				var lastID int64
-				for _, dr := range doneRows {
-					t, err := exoDB.AddTag(dr.fromTagName)
-					if err != nil {
+				for _, c := range changes {
+					if err := exoDB.UpdateRowDone(c.id, c.prev); err != nil {
 						return 0, err
 					}
-					if err := exoDB.MoveRowToTag(dr.rowID, t.ID); err != nil {
-						return 0, err
-					}
-					if err := exoDB.UpdateRowText(dr.rowID, dr.origText); err != nil {
-						return 0, err
-					}
-					lastID = dr.rowID
 				}
-				return lastID, nil
+				return changes[0].id, nil
 			},
 			redoFn: func(exoDB *db.ExoDB) (int64, error) {
-				done, err := exoDB.AddTag("done")
-				if err != nil {
-					return 0, err
-				}
-				var lastID int64
-				for _, dr := range doneRows {
-					if err := exoDB.MoveRowToTag(dr.rowID, done.ID); err != nil {
+				for _, c := range changes {
+					if err := exoDB.UpdateRowDone(c.id, c.next); err != nil {
 						return 0, err
 					}
-					if err := exoDB.UpdateRowText(dr.rowID, dr.newText); err != nil {
-						return 0, err
-					}
-					lastID = dr.rowID
 				}
-				return lastID, nil
+				return changes[0].id, nil
 			},
 		})
 		m.selectedRows = make(map[int64]bool)
-		m.setStatus(fmt.Sprintf("moved %d row(s) to [[done]]", len(doneRows)))
+		if len(changes) == 1 && changes[0].next {
+			// Animate the strikethrough before refreshing.
+			m.animRowID = changes[0].id
+			m.animText = targets[0].row.Text
+			m.animPos = 0
+			return doneAnimTick()
+		}
 		m.refresh()
+		if len(changes) == 1 && !changes[0].next {
+			m.positionCursor(changes[0].id)
+		} else {
+			m.clampCursorToDirectRows()
+		}
 
 	case "y":
 		if len(m.rowItems) == 0 {
@@ -1418,6 +1447,10 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 
 	case "?":
 		m.mode = modeHelp
+
+	case "\\":
+		m.hideDone = !m.hideDone
+		m.refresh()
 
 	case "/":
 		m.allSearchRows = nil
@@ -1824,10 +1857,14 @@ func (m model) mainContentLines(innerW int) []string {
 		chunks := wrapText(item.row.Text, textW)
 
 		pri := item.row.Priority
+		done := item.row.Done
+		animating := m.animRowID != 0 && item.row.ID == m.animRowID
 		if i == m.cursor {
 			var bullet string
 			if marked {
 				bullet = styleMarked.Render("◆") + " "
+			} else if done && !animating {
+				bullet = styleDone.Render("✓") + " "
 			} else if pri >= 1 && pri <= 5 {
 				bullet = stylePriority[pri].Render("•") + " "
 			} else {
@@ -1843,7 +1880,22 @@ func (m model) mainContentLines(innerW int) []string {
 				if isLast && hasNote {
 					noteSuffix = styleSelected.Render(" ") + styleDim.Background(lipgloss.Color("240")).Render("✎")
 				}
-				raw := pfx + m.renderRowText(chunk, "240") + noteSuffix
+				var text string
+				switch {
+				case animating:
+					runes := []rune(chunk)
+					cutoff := m.animPos
+					if cutoff > len(runes) {
+						cutoff = len(runes)
+					}
+					doneStyle := styleDone.Background(lipgloss.Color("240"))
+					text = doneStyle.Render(string(runes[:cutoff])) + styleSelected.Render(string(runes[cutoff:]))
+				case done:
+					text = styleDone.Background(lipgloss.Color("240")).Render(chunk)
+				default:
+					text = m.renderRowText(chunk, "240")
+				}
+				raw := pfx + text + noteSuffix
 				if gap := innerW - ansi.StringWidth(raw); gap > 0 {
 					raw += styleSelected.Render(strings.Repeat(" ", gap))
 				}
@@ -1853,6 +1905,8 @@ func (m model) mainContentLines(innerW int) []string {
 			var firstBullet string
 			if marked {
 				firstBullet = styleMarked.Render("◆")
+			} else if done && !animating {
+				firstBullet = styleDone.Render("✓")
 			} else if pri >= 1 && pri <= 5 {
 				firstBullet = stylePriority[pri].Render("•")
 			} else {
@@ -1870,7 +1924,21 @@ func (m model) mainContentLines(innerW int) []string {
 					pfx = indent
 					bullet = firstBullet
 				}
-				lines = append(lines, pfx+bullet+" "+m.renderRowText(chunk, "")+noteSuffix)
+				var text string
+				switch {
+				case animating:
+					runes := []rune(chunk)
+					cutoff := m.animPos
+					if cutoff > len(runes) {
+						cutoff = len(runes)
+					}
+					text = styleDone.Render(string(runes[:cutoff])) + string(runes[cutoff:])
+				case done:
+					text = styleDone.Render(chunk)
+				default:
+					text = m.renderRowText(chunk, "")
+				}
+				lines = append(lines, pfx+bullet+" "+text+noteSuffix)
 			}
 		}
 	}
@@ -2164,6 +2232,7 @@ func (m model) viewHelp() string {
 		"   r          rename current tag",
 		"   t          tag selector (type to filter)",
 		"   /          fuzzy search all items",
+		"   \\          toggle show/hide done items",
 		"   ctrl-t     back in tag stack",
 		"   1-9        jump to tag reference",
 		"",
@@ -2176,7 +2245,7 @@ func (m model) viewHelp() string {
 		"   e          edit selected row",
 		"   N          add/edit note on selected row",
 		"   d          cut selected row (or all marked)",
-		"   D          move to [[done]] (or all marked)",
+		"   D          mark done (or all marked)",
 		"   y          yank selected row",
 		"   p / P      paste below / above cursor",
 		"   J / K      move row down / up (within priority group)",
