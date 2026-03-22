@@ -20,54 +20,22 @@
         lib = pkgs.lib;
       in
       {
-        packages.exotui = pkgs.buildGoModule {
-          name = "exotui";
-          version = "0.5.0";
-
-          src = lib.cleanSource ./.;
-
-          subPackages = [ "cmd/exotui" ];
-
-          doCheck = false;
-
-          vendorHash = "sha256-27sDcfEKar2BnnWD6ZwgcNS/d8/gKocSv34ijVcQ824=";
-        };
-
-        packages.exobt = pkgs.buildGoModule {
-          name = "exobt";
+        packages.exo = pkgs.buildGoModule {
+          name = "exo";
           version = "1.1.0";
 
           src = lib.cleanSource ./.;
 
-          subPackages = [ "cmd/exobt" ];
+          subPackages = [ "cmd/exo" ];
 
           doCheck = false;
 
-          vendorHash = "sha256-27sDcfEKar2BnnWD6ZwgcNS/d8/gKocSv34ijVcQ824=";
+          vendorHash = "sha256-Kx80kQ5xSFBuaG3ey0n3oX3g5gOvphtuLPNP+qRROCQ=";
         };
 
         devShell = pkgs.mkShell {
           packages = with pkgs; [
-            libxcb
-            libxkbcommon
-            xorg.libX11
-            xorg.libX11.dev
-            xorg.xorgproto # Crucial: Includes X11/X.h and other headers
-            xorg.libXext
-            xorg.libXft
-            xorg.libXinerama
-            xorg.libXcursor
-            xorg.libXi
-            xorg.libXrender
-            xorg.libXrandr
-            xorg.libXfixes
-
-            wayland
-            wayland.dev
-
-            libGL.dev
             pkg-config
-            xorg.libXxf86vm
             gcc
           ];
         };

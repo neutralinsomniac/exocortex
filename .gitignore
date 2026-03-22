@@ -12,10 +12,7 @@
 *.out
 
 # exocortex stuff
-exotui
-exobt
-exogiu
-exogio
+/exo
 *.db
 
 # Dependency directories (remove the comment below to include it)
