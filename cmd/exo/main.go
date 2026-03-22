@@ -134,11 +134,11 @@ type model struct {
 	tagStack    []tagStackEntry
 
 	// done animation
-	animRowID  int64  // row currently animating (0 = none)
-	animText   string // original text of the animating row
-	animPos    int    // strikethrough has drawn through this many runes
-	undoStack   []undoEntry
-	redoStack   []undoEntry
+	animRowID int64  // row currently animating (0 = none)
+	animText  string // original text of the animating row
+	animPos   int    // strikethrough has drawn through this many runes
+	undoStack []undoEntry
+	redoStack []undoEntry
 
 	// navigation
 	cursor     int
@@ -149,7 +149,7 @@ type model struct {
 	textInput     textinput.Model
 	pendingAction pendingAction
 	pendingRow    db.Row
-	pendingRank int // rank at which the pending add/insert should land
+	pendingRank   int // rank at which the pending add/insert should land
 
 	// tag select mode
 	tagInput     textinput.Model
@@ -1065,7 +1065,7 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 		selSnap := m.snapshotSelection()
 		targets := m.collectTargets()
 		type priorChange struct {
-			id       int64
+			id         int64
 			oldP, newP int
 		}
 		var changes []priorChange
@@ -1116,7 +1116,7 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 		m.status = ""
 		m.goToInbox()
 
-	case "ctrl+t":
+	case "ctrl+t", "b":
 		m.popTag()
 
 	case "enter":
@@ -1797,7 +1797,7 @@ func (m model) hints() string {
 		styleKey.Render("u/U") + " undo/redo",
 		styleKey.Render("/") + " search",
 		styleKey.Render("t") + " tags",
-		styleKey.Render("ctrl-t") + " back",
+		styleKey.Render("ctrl-t, b") + " back",
 		styleKey.Render("?") + " help",
 		styleKey.Render("q") + " quit",
 	}, "  "))
@@ -2361,8 +2361,8 @@ func (m model) viewHelp() string {
 		"   r          rename current tag",
 		"   t          tag selector (type to filter)",
 		"   /          fuzzy search all items",
-		"   \\          toggle show/hide done items",
-		"   ctrl-t     back in tag stack",
+		"   \\         toggle show/hide done items",
+		"   ctrl-t, b  back in tag stack",
 		"   1-9        jump to tag reference",
 		"",
 		" " + styleKey.Render("[Rows]"),
@@ -2370,8 +2370,8 @@ func (m model) viewHelp() string {
 		"   enter      follow tag link in selected row",
 		"   o          add row below cursor",
 		"   O          insert row above cursor",
-		"   space       toggle row in/out of selection",
-		"   ;           clear selection",
+		"   space      toggle row in/out of selection",
+		"   ;          clear selection",
 		"   e          edit selected row",
 		"   N          add/edit note on selected row",
 		"   d          cut selected row (or all marked)",
