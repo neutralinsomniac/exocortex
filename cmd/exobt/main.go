@@ -106,11 +106,8 @@ type undoEntry struct {
 	// fns return the row ID that was created/modified (0 = no specific row, e.g. a deletion)
 	undoFn func(exoDB *db.ExoDB) (int64, error)
 	redoFn func(exoDB *db.ExoDB) (int64, error) // nil = not redoable
-	// postUndoCursorRank positions the cursor at a specific rank after undo,
-	// used when undoFn deletes a row (returns rowID=0). Only active when
-	// postUndoCursorRankSet is true.
-	postUndoCursorRank    int
-	postUndoCursorRankSet bool
+	// savedCursor is the cursor index at the time of the operation; restored on undo.
+	savedCursor int
 	// postUndoSelection restores a multi-selection after undo, if non-empty.
 	postUndoSelection map[int64]bool
 	// postUndoSelectionFn, if set, is called after undoFn runs to get the
@@ -476,6 +473,7 @@ func (m *model) setStatus(s string) { m.status = s; m.isErr = false }
 const maxUndoStack = 50
 
 func (m *model) pushUndo(entry undoEntry) {
+	entry.savedCursor = m.cursor
 	m.undoStack = append(m.undoStack, entry)
 	if len(m.undoStack) > maxUndoStack {
 		m.undoStack = m.undoStack[1:]
@@ -491,7 +489,7 @@ func (m *model) applyUndo() {
 	l := len(m.undoStack)
 	entry := m.undoStack[l-1]
 	m.undoStack = m.undoStack[:l-1]
-	rowID, err := entry.undoFn(m.dbState.ExoDB)
+	_, err := entry.undoFn(m.dbState.ExoDB)
 	if err != nil {
 		m.setErr("undo failed: " + err.Error())
 		return
@@ -512,11 +510,7 @@ func (m *model) applyUndo() {
 	}
 	m.setStatus("undid: " + entry.desc)
 	m.refresh()
-	if rowID != 0 {
-		m.positionCursor(rowID)
-	} else if entry.postUndoCursorRankSet {
-		m.positionCursorAtRank(entry.postUndoCursorRank)
-	}
+	m.positionCursorAtRank(entry.savedCursor)
 	if entry.postUndoSelectionFn != nil {
 		if sel := entry.postUndoSelectionFn(); len(sel) > 0 {
 			m.selectedRows = sel
@@ -798,11 +792,9 @@ func (m *model) handleEditorDone(msg editorDoneMsg) tea.Cmd {
 		tagID, tagName, text := m.dbState.CurrentDBTag.ID, m.dbState.CurrentDBTag.Name, msg.text
 		var latestID int64 = row.ID
 		m.pushUndo(undoEntry{
-			desc:                  "add row",
-			tagID:                 tagID,
-			tagName:               tagName,
-			postUndoCursorRank:    max(0, rank-1),
-			postUndoCursorRankSet: true,
+			desc:    "add row",
+			tagID:   tagID,
+			tagName: tagName,
 			undoFn: func(exoDB *db.ExoDB) (int64, error) {
 				return 0, exoDB.DeleteRowByID(latestID)
 			},
@@ -834,11 +826,9 @@ func (m *model) handleEditorDone(msg editorDoneMsg) tea.Cmd {
 		tagID, tagName, text := m.dbState.CurrentDBTag.ID, m.dbState.CurrentDBTag.Name, msg.text
 		var latestID int64 = row.ID
 		m.pushUndo(undoEntry{
-			desc:                  "insert row",
-			tagID:                 tagID,
-			tagName:               tagName,
-			postUndoCursorRank:    max(0, rank-1),
-			postUndoCursorRankSet: true,
+			desc:    "insert row",
+			tagID:   tagID,
+			tagName: tagName,
 			undoFn: func(exoDB *db.ExoDB) (int64, error) {
 				return 0, exoDB.DeleteRowByID(latestID)
 			},
