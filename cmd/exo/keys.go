@@ -857,6 +857,9 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 				continue
 			}
 			for _, row := range rows {
+				if m.hideDone && row.Done {
+					continue
+				}
 				m.allSearchRows = append(m.allSearchRows, searchResult{row: row, tag: tag})
 			}
 		}
