@@ -107,7 +107,7 @@ func sqlGetRowTombstonesSince(tx *sql.Tx, since int64) ([]Tombstone, error) {
 }
 
 func sqlGetTagTombstonesSince(tx *sql.Tx, since int64) ([]Tombstone, error) {
-	sqlRows, err := tx.Query("SELECT name, deleted_ts FROM tag_tombstone WHERE deleted_ts > ?", since)
+	sqlRows, err := tx.Query("SELECT uuid, deleted_ts FROM tag_tombstone WHERE deleted_ts > ?", since)
 	if err != nil {
 		return nil, err
 	}
@@ -129,8 +129,8 @@ func sqlAddRowTombstone(tx *sql.Tx, uuid string, ts int64) error {
 	return err
 }
 
-func sqlAddTagTombstone(tx *sql.Tx, name string, ts int64) error {
-	_, err := tx.Exec("INSERT OR REPLACE INTO tag_tombstone (name, deleted_ts) VALUES (?, ?)", name, ts)
+func sqlAddTagTombstone(tx *sql.Tx, uuid string, ts int64) error {
+	_, err := tx.Exec("INSERT OR REPLACE INTO tag_tombstone (uuid, deleted_ts) VALUES (?, ?)", uuid, ts)
 	return err
 }
 
@@ -167,19 +167,19 @@ func sqlApplyRowTombstone(tx *sql.Tx, t Tombstone) error {
 // tag (cascading to its rows) if it is older than the tombstone (LWW).
 func sqlApplyTagTombstone(tx *sql.Tx, t Tombstone) error {
 	var existingTS int64
-	err := tx.QueryRow("SELECT deleted_ts FROM tag_tombstone WHERE name = ?", t.Key).Scan(&existingTS)
+	err := tx.QueryRow("SELECT deleted_ts FROM tag_tombstone WHERE uuid = ?", t.Key).Scan(&existingTS)
 	if err == nil && existingTS >= t.DeletedTS {
 		return nil
 	} else if err != nil && err != sql.ErrNoRows {
 		return err
 	}
 
-	if _, err = tx.Exec("INSERT OR REPLACE INTO tag_tombstone (name, deleted_ts) VALUES (?, ?)", t.Key, t.DeletedTS); err != nil {
+	if _, err = tx.Exec("INSERT OR REPLACE INTO tag_tombstone (uuid, deleted_ts) VALUES (?, ?)", t.Key, t.DeletedTS); err != nil {
 		return err
 	}
 
 	var updatedTS int64
-	err = tx.QueryRow("SELECT updated_ts FROM tag WHERE name = ?", t.Key).Scan(&updatedTS)
+	err = tx.QueryRow("SELECT updated_ts FROM tag WHERE uuid = ?", t.Key).Scan(&updatedTS)
 	if err == sql.ErrNoRows {
 		return nil
 	}
@@ -187,7 +187,7 @@ func sqlApplyTagTombstone(tx *sql.Tx, t Tombstone) error {
 		return err
 	}
 	if t.DeletedTS > updatedTS {
-		_, err = tx.Exec("DELETE FROM tag WHERE name = ?", t.Key)
+		_, err = tx.Exec("DELETE FROM tag WHERE uuid = ?", t.Key)
 	}
 	return err
 }
@@ -253,14 +253,15 @@ func (e *ExoDB) ApplyChanges(p SyncPayload) error {
 	return nil
 }
 
-// sqlUpsertTag creates or updates a tag by name (LWW on updated_ts).
+// sqlUpsertTag creates or updates a tag by UUID (LWW on updated_ts).
+// A newer remote name overwrites the local name, propagating renames.
 // Returns the local tag ID.
 func sqlUpsertTag(tx *sql.Tx, t Tag) (int64, error) {
 	var existing Tag
-	err := tx.QueryRow("SELECT id, name, updated_ts FROM tag WHERE name = ?", t.Name).
+	err := tx.QueryRow("SELECT id, name, updated_ts FROM tag WHERE uuid = ?", t.UUID).
 		Scan(&existing.ID, &existing.Name, &existing.UpdatedTS)
 	if err == sql.ErrNoRows {
-		res, insertErr := tx.Exec("INSERT INTO tag (name, updated_ts) VALUES (?, ?)", t.Name, t.UpdatedTS)
+		res, insertErr := tx.Exec("INSERT INTO tag (name, updated_ts, uuid) VALUES (?, ?, ?)", t.Name, t.UpdatedTS, t.UUID)
 		if insertErr != nil {
 			return 0, insertErr
 		}
@@ -271,7 +272,8 @@ func sqlUpsertTag(tx *sql.Tx, t Tag) (int64, error) {
 		return 0, err
 	}
 	if t.UpdatedTS > existing.UpdatedTS {
-		_, err = tx.Exec("UPDATE tag SET updated_ts = ? WHERE id = ?", t.UpdatedTS, existing.ID)
+		// Update both name and timestamp: this is how renames propagate.
+		_, err = tx.Exec("UPDATE tag SET name = ?, updated_ts = ? WHERE id = ?", t.Name, t.UpdatedTS, existing.ID)
 	}
 	return existing.ID, err
 }

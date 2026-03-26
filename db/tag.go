@@ -13,6 +13,7 @@ type Tag struct {
 	ID        int64
 	Name      string
 	UpdatedTS int64
+	UUID      string
 }
 
 func sqlAddTag(tx *sql.Tx, name string) (int64, error) {
@@ -23,12 +24,12 @@ func sqlAddTag(tx *sql.Tx, name string) (int64, error) {
 	var duplicateEntry bool
 	var err error
 
-	statement, err = tx.Prepare("INSERT INTO tag (name, updated_ts) VALUES (?, ?)")
+	statement, err = tx.Prepare("INSERT INTO tag (name, updated_ts, uuid) VALUES (?, ?, ?)")
 	if err != nil {
 		goto End
 	}
 
-	res, err = statement.Exec(name, time.Now().UnixNano())
+	res, err = statement.Exec(name, time.Now().UnixNano(), newUUID())
 	// it's not an error if this tag name already exists
 	if sqliteErr, ok := err.(sqlite3.Error); ok {
 		if sqliteErr.ExtendedCode == sqlite3.ErrConstraintUnique {
@@ -61,9 +62,9 @@ func sqlGetTagByName(tx *sql.Tx, name string) (Tag, error) {
 	var sqlRow *sql.Row
 	var err error
 
-	sqlRow = tx.QueryRow("SELECT id, name, updated_ts FROM tag WHERE name = $1", name)
+	sqlRow = tx.QueryRow("SELECT id, name, updated_ts, uuid FROM tag WHERE name = $1", name)
 
-	err = sqlRow.Scan(&tag.ID, &tag.Name, &tag.UpdatedTS)
+	err = sqlRow.Scan(&tag.ID, &tag.Name, &tag.UpdatedTS, &tag.UUID)
 	if err != nil {
 		goto End
 	}
@@ -105,14 +106,14 @@ func sqlGetAllTags(tx *sql.Tx) ([]Tag, error) {
 	var sqlRows *sql.Rows
 	var err error
 
-	sqlRows, err = tx.Query("SELECT id, name, updated_ts FROM tag ORDER BY updated_ts desc")
+	sqlRows, err = tx.Query("SELECT id, name, updated_ts, uuid FROM tag ORDER BY updated_ts desc")
 	if err != nil {
 		goto End
 	}
 	defer sqlRows.Close()
 
 	for sqlRows.Next() {
-		err = sqlRows.Scan(&tag.ID, &tag.Name, &tag.UpdatedTS)
+		err = sqlRows.Scan(&tag.ID, &tag.Name, &tag.UpdatedTS, &tag.UUID)
 		if err != nil {
 			goto End
 		}
@@ -163,9 +164,9 @@ func sqlGetTagByID(tx *sql.Tx, id int64) (Tag, error) {
 	var err error
 	var sqlRow *sql.Row
 
-	sqlRow = tx.QueryRow("SELECT id, name, updated_ts FROM tag WHERE id = $1", id)
+	sqlRow = tx.QueryRow("SELECT id, name, updated_ts, uuid FROM tag WHERE id = $1", id)
 
-	err = sqlRow.Scan(&tag.ID, &tag.Name, &tag.UpdatedTS)
+	err = sqlRow.Scan(&tag.ID, &tag.Name, &tag.UpdatedTS, &tag.UUID)
 	if err != nil {
 		goto End
 	}
@@ -260,7 +261,7 @@ func (e *ExoDB) DeleteTagIfEmpty(id int64) error {
 		if err != nil {
 			goto End
 		}
-		err = sqlAddTagTombstone(tx, tag.Name, time.Now().UnixNano())
+		err = sqlAddTagTombstone(tx, tag.UUID, time.Now().UnixNano())
 	}
 
 End:
@@ -288,7 +289,7 @@ func (e *ExoDB) DeleteTagByID(id int64) error {
 		goto End
 	}
 
-	err = sqlAddTagTombstone(tx, tag.Name, time.Now().UnixNano())
+	err = sqlAddTagTombstone(tx, tag.UUID, time.Now().UnixNano())
 	if err != nil {
 		goto End
 	}
@@ -323,11 +324,6 @@ func (e *ExoDB) RenameTag(oldname string, newname string) (Tag, error) {
 	var err error
 
 	tx, err = e.conn.Begin()
-	if err != nil {
-		goto End
-	}
-
-	err = sqlAddTagTombstone(tx, oldname, time.Now().UnixNano())
 	if err != nil {
 		goto End
 	}

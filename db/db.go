@@ -27,6 +27,9 @@ func (e *ExoDB) Migrate() error {
 		`ALTER TABLE row ADD COLUMN uuid TEXT NOT NULL DEFAULT ''`,
 		`CREATE TABLE IF NOT EXISTS row_tombstone (uuid TEXT PRIMARY KEY, deleted_ts INTEGER NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS tag_tombstone (name TEXT PRIMARY KEY, deleted_ts INTEGER NOT NULL)`,
+		`ALTER TABLE tag ADD COLUMN uuid TEXT NOT NULL DEFAULT ''`,
+		`DROP TABLE IF EXISTS tag_tombstone`,
+		`CREATE TABLE IF NOT EXISTS tag_tombstone (uuid TEXT PRIMARY KEY, deleted_ts INTEGER NOT NULL)`,
 	}
 	for _, m := range migrations {
 		if _, err := e.conn.Exec(m); err != nil {
@@ -36,7 +39,34 @@ func (e *ExoDB) Migrate() error {
 			}
 		}
 	}
-	return e.populateRowUUIDs()
+	if err := e.populateRowUUIDs(); err != nil {
+		return err
+	}
+	return e.populateTagUUIDs()
+}
+
+// populateTagUUIDs assigns a UUID to any existing tags that predate the uuid column.
+func (e *ExoDB) populateTagUUIDs() error {
+	rows, err := e.conn.Query("SELECT id FROM tag WHERE uuid = ''")
+	if err != nil {
+		return err
+	}
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err = rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+		ids = append(ids, id)
+	}
+	rows.Close()
+	for _, id := range ids {
+		if _, err = e.conn.Exec("UPDATE tag SET uuid = ? WHERE id = ?", newUUID(), id); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // populateRowUUIDs assigns a UUID to any existing rows that predate the uuid column.
