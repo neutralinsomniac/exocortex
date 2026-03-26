@@ -25,6 +25,8 @@ func (e *ExoDB) Migrate() error {
 		`ALTER TABLE row ADD COLUMN priority INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE row ADD COLUMN done INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE row ADD COLUMN uuid TEXT NOT NULL DEFAULT ''`,
+		`CREATE TABLE IF NOT EXISTS row_tombstone (uuid TEXT PRIMARY KEY, deleted_ts INTEGER NOT NULL)`,
+		`CREATE TABLE IF NOT EXISTS tag_tombstone (name TEXT PRIMARY KEY, deleted_ts INTEGER NOT NULL)`,
 	}
 	for _, m := range migrations {
 		if _, err := e.conn.Exec(m); err != nil {

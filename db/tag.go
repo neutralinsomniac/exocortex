@@ -230,11 +230,17 @@ End:
 
 func (e *ExoDB) DeleteTagIfEmpty(id int64) error {
 	var tx *sql.Tx
+	var tag Tag
 	var rows []Row
 	var refs Refs
 	var err error
 
 	tx, err = e.conn.Begin()
+	if err != nil {
+		goto End
+	}
+
+	tag, err = sqlGetTagByID(tx, id)
 	if err != nil {
 		goto End
 	}
@@ -251,6 +257,10 @@ func (e *ExoDB) DeleteTagIfEmpty(id int64) error {
 
 	if len(rows)+len(refs) == 0 {
 		err = sqlDeleteTagByID(tx, id)
+		if err != nil {
+			goto End
+		}
+		err = sqlAddTagTombstone(tx, tag.Name, time.Now().UnixNano())
 	}
 
 End:
@@ -260,6 +270,7 @@ End:
 
 func (e *ExoDB) DeleteTagByID(id int64) error {
 	var tx *sql.Tx
+	var tag Tag
 	var err error
 
 	tx, err = e.conn.Begin()
@@ -267,7 +278,17 @@ func (e *ExoDB) DeleteTagByID(id int64) error {
 		goto End
 	}
 
+	tag, err = sqlGetTagByID(tx, id)
+	if err != nil {
+		goto End
+	}
+
 	err = sqlDeleteTagByID(tx, id)
+	if err != nil {
+		goto End
+	}
+
+	err = sqlAddTagTombstone(tx, tag.Name, time.Now().UnixNano())
 	if err != nil {
 		goto End
 	}
@@ -302,6 +323,11 @@ func (e *ExoDB) RenameTag(oldname string, newname string) (Tag, error) {
 	var err error
 
 	tx, err = e.conn.Begin()
+	if err != nil {
+		goto End
+	}
+
+	err = sqlAddTagTombstone(tx, oldname, time.Now().UnixNano())
 	if err != nil {
 		goto End
 	}

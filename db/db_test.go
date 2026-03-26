@@ -26,5 +26,10 @@ func setupDB(t *testing.T) ExoDB {
 		t.Fatal(err)
 	}
 
+	err = db.Migrate()
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	return db
 }

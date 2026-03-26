@@ -75,6 +75,7 @@ End:
 
 func (e *ExoDB) DeleteRowByID(id int64) error {
 	var tx *sql.Tx
+	var row Row
 	var err error
 
 	tx, err = e.conn.Begin()
@@ -82,7 +83,17 @@ func (e *ExoDB) DeleteRowByID(id int64) error {
 		goto End
 	}
 
+	row, err = sqlGetRowByID(tx, id)
+	if err != nil {
+		goto End
+	}
+
 	err = sqlDeleteRowByID(tx, id)
+	if err != nil {
+		goto End
+	}
+
+	err = sqlAddRowTombstone(tx, row.UUID, time.Now().UnixNano())
 	if err != nil {
 		goto End
 	}

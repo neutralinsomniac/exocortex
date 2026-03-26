@@ -6,12 +6,21 @@ import (
 	"fmt"
 )
 
+// Tombstone records a deletion event for LWW sync.
+// Key is the row UUID for row tombstones, or the tag name for tag tombstones.
+type Tombstone struct {
+	Key       string `json:"key"`
+	DeletedTS int64  `json:"deleted_ts"`
+}
+
 // SyncPayload is the wire format for bidirectional sync.
 type SyncPayload struct {
-	Since    int64  `json:"since"`
-	ServerTS int64  `json:"server_ts,omitempty"`
-	Tags     []Tag  `json:"tags"`
-	Rows     []Row  `json:"rows"`
+	Since       int64       `json:"since"`
+	ServerTS    int64       `json:"server_ts,omitempty"`
+	Tags        []Tag       `json:"tags"`
+	Rows        []Row       `json:"rows"`
+	DeletedRows []Tombstone `json:"deleted_rows,omitempty"`
+	DeletedTags []Tombstone `json:"deleted_tags,omitempty"`
 }
 
 func newUUID() string {
@@ -23,7 +32,7 @@ func newUUID() string {
 		b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
 }
 
-// BuildSyncPayload returns all tags and all rows modified after since.
+// BuildSyncPayload returns all tags and all rows/tombstones modified after since.
 // All tags are always included (not filtered by since) so the receiver can
 // remap remote tag IDs to local ones.
 func (e *ExoDB) BuildSyncPayload(since int64) (SyncPayload, error) {
@@ -42,6 +51,18 @@ func (e *ExoDB) BuildSyncPayload(since int64) (SyncPayload, error) {
 	}
 
 	p.Rows, err = sqlGetRowsSince(tx, since)
+	if err != nil {
+		sqlCommitOrRollback(tx, nil)
+		return p, err
+	}
+
+	p.DeletedRows, err = sqlGetRowTombstonesSince(tx, since)
+	if err != nil {
+		sqlCommitOrRollback(tx, nil)
+		return p, err
+	}
+
+	p.DeletedTags, err = sqlGetTagTombstonesSince(tx, since)
 	sqlCommitOrRollback(tx, nil)
 	return p, err
 }
@@ -67,8 +88,114 @@ func sqlGetRowsSince(tx *sql.Tx, since int64) ([]Row, error) {
 	return rows, nil
 }
 
+func sqlGetRowTombstonesSince(tx *sql.Tx, since int64) ([]Tombstone, error) {
+	sqlRows, err := tx.Query("SELECT uuid, deleted_ts FROM row_tombstone WHERE deleted_ts > ?", since)
+	if err != nil {
+		return nil, err
+	}
+	defer sqlRows.Close()
+
+	var tombstones []Tombstone
+	for sqlRows.Next() {
+		var t Tombstone
+		if err = sqlRows.Scan(&t.Key, &t.DeletedTS); err != nil {
+			return nil, err
+		}
+		tombstones = append(tombstones, t)
+	}
+	return tombstones, nil
+}
+
+func sqlGetTagTombstonesSince(tx *sql.Tx, since int64) ([]Tombstone, error) {
+	sqlRows, err := tx.Query("SELECT name, deleted_ts FROM tag_tombstone WHERE deleted_ts > ?", since)
+	if err != nil {
+		return nil, err
+	}
+	defer sqlRows.Close()
+
+	var tombstones []Tombstone
+	for sqlRows.Next() {
+		var t Tombstone
+		if err = sqlRows.Scan(&t.Key, &t.DeletedTS); err != nil {
+			return nil, err
+		}
+		tombstones = append(tombstones, t)
+	}
+	return tombstones, nil
+}
+
+func sqlAddRowTombstone(tx *sql.Tx, uuid string, ts int64) error {
+	_, err := tx.Exec("INSERT OR REPLACE INTO row_tombstone (uuid, deleted_ts) VALUES (?, ?)", uuid, ts)
+	return err
+}
+
+func sqlAddTagTombstone(tx *sql.Tx, name string, ts int64) error {
+	_, err := tx.Exec("INSERT OR REPLACE INTO tag_tombstone (name, deleted_ts) VALUES (?, ?)", name, ts)
+	return err
+}
+
+// sqlApplyRowTombstone records a remote row deletion locally and deletes the
+// row if it is older than the tombstone (LWW).
+func sqlApplyRowTombstone(tx *sql.Tx, t Tombstone) error {
+	var existingTS int64
+	err := tx.QueryRow("SELECT deleted_ts FROM row_tombstone WHERE uuid = ?", t.Key).Scan(&existingTS)
+	if err == nil && existingTS >= t.DeletedTS {
+		return nil // already have a newer or equal tombstone
+	} else if err != nil && err != sql.ErrNoRows {
+		return err
+	}
+
+	if _, err = tx.Exec("INSERT OR REPLACE INTO row_tombstone (uuid, deleted_ts) VALUES (?, ?)", t.Key, t.DeletedTS); err != nil {
+		return err
+	}
+
+	var updatedTS int64
+	err = tx.QueryRow("SELECT updated_ts FROM row WHERE uuid = ?", t.Key).Scan(&updatedTS)
+	if err == sql.ErrNoRows {
+		return nil // row not present locally; tombstone recorded for future reference
+	}
+	if err != nil {
+		return err
+	}
+	if t.DeletedTS > updatedTS {
+		_, err = tx.Exec("DELETE FROM row WHERE uuid = ?", t.Key)
+	}
+	return err
+}
+
+// sqlApplyTagTombstone records a remote tag deletion locally and deletes the
+// tag (cascading to its rows) if it is older than the tombstone (LWW).
+func sqlApplyTagTombstone(tx *sql.Tx, t Tombstone) error {
+	var existingTS int64
+	err := tx.QueryRow("SELECT deleted_ts FROM tag_tombstone WHERE name = ?", t.Key).Scan(&existingTS)
+	if err == nil && existingTS >= t.DeletedTS {
+		return nil
+	} else if err != nil && err != sql.ErrNoRows {
+		return err
+	}
+
+	if _, err = tx.Exec("INSERT OR REPLACE INTO tag_tombstone (name, deleted_ts) VALUES (?, ?)", t.Key, t.DeletedTS); err != nil {
+		return err
+	}
+
+	var updatedTS int64
+	err = tx.QueryRow("SELECT updated_ts FROM tag WHERE name = ?", t.Key).Scan(&updatedTS)
+	if err == sql.ErrNoRows {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if t.DeletedTS > updatedTS {
+		_, err = tx.Exec("DELETE FROM tag WHERE name = ?", t.Key)
+	}
+	return err
+}
+
 // ApplyChanges merges a remote SyncPayload into the local DB using
-// last-write-wins (by updated_ts). Tags are matched by name; rows by UUID.
+// last-write-wins (by updated_ts / deleted_ts). Tags are matched by name;
+// rows by UUID. Tombstones are applied after upserts so a concurrent
+// upsert+delete on the same object resolves correctly by timestamp.
 func (e *ExoDB) ApplyChanges(p SyncPayload) error {
 	tx, err := e.conn.Begin()
 	if err != nil {
@@ -105,6 +232,20 @@ func (e *ExoDB) ApplyChanges(p SyncPayload) error {
 				sqlCommitOrRollback(tx, refErr)
 				return refErr
 			}
+		}
+	}
+
+	for _, t := range p.DeletedRows {
+		if applyErr := sqlApplyRowTombstone(tx, t); applyErr != nil {
+			sqlCommitOrRollback(tx, applyErr)
+			return applyErr
+		}
+	}
+
+	for _, t := range p.DeletedTags {
+		if applyErr := sqlApplyTagTombstone(tx, t); applyErr != nil {
+			sqlCommitOrRollback(tx, applyErr)
+			return applyErr
 		}
 	}
 
