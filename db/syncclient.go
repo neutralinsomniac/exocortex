@@ -9,10 +9,22 @@ import (
 	"time"
 )
 
+// ForceFullSyncWith resets the push timestamp so that all local rows are
+// sent to the server, then performs a normal sync. Use this after a server
+// reset or when a peer is missing rows that were created before the last sync.
+func (e *ExoDB) ForceFullSyncWith(serverURL, token string) error {
+	if err := e.SetSetting("last_push_ts", "0"); err != nil {
+		return fmt.Errorf("reset push timestamp: %w", err)
+	}
+	return e.SyncWith(serverURL, token)
+}
+
 // SyncWith performs a bidirectional sync against the given server URL using
 // the shared Bearer token. The local DB is updated in place; the caller
 // should call State.Refresh() afterwards to pick up new data.
 func (e *ExoDB) SyncWith(serverURL, token string) error {
+	// last_sync_ts: server's ServerTS from last response — filters what the
+	// server sends back to us (we only want rows newer than our last pull).
 	lastSyncStr, err := e.GetSetting("last_sync_ts")
 	if err != nil {
 		return fmt.Errorf("get last_sync_ts: %w", err)
@@ -24,10 +36,28 @@ func (e *ExoDB) SyncWith(serverURL, token string) error {
 		}
 	}
 
-	local, err := e.BuildSyncPayload(since)
+	// last_push_ts: max updated_ts we successfully pushed last time — filters
+	// what we send to the server (only rows created/modified since last push).
+	// On first push (last_push_ts=0) we send everything, which correctly
+	// bootstraps a fresh server. Thereafter only incremental rows are sent.
+	lastPushStr, err := e.GetSetting("last_push_ts")
+	if err != nil {
+		return fmt.Errorf("get last_push_ts: %w", err)
+	}
+	var lastPush int64
+	if lastPushStr != "" {
+		if v, parseErr := strconv.ParseInt(lastPushStr, 10, 64); parseErr == nil {
+			lastPush = v
+		}
+	}
+
+	local, err := e.BuildSyncPayload(lastPush)
 	if err != nil {
 		return fmt.Errorf("build payload: %w", err)
 	}
+	// Overwrite Since so the server knows what to send back, independently of
+	// what we're pushing.
+	local.Since = since
 
 	body, err := json.Marshal(local)
 	if err != nil {
@@ -69,6 +99,20 @@ func (e *ExoDB) SyncWith(serverURL, token string) error {
 	}
 	if err = e.SetSetting("last_sync_ts", strconv.FormatInt(serverTS, 10)); err != nil {
 		return fmt.Errorf("save sync timestamp: %w", err)
+	}
+
+	// Advance last_push_ts to the highest updated_ts we just sent, so the
+	// next sync only transmits rows modified after this one.
+	var maxSentTS int64
+	for _, r := range local.Rows {
+		if r.UpdatedTS > maxSentTS {
+			maxSentTS = r.UpdatedTS
+		}
+	}
+	if maxSentTS > lastPush {
+		if err = e.SetSetting("last_push_ts", strconv.FormatInt(maxSentTS, 10)); err != nil {
+			return fmt.Errorf("save push timestamp: %w", err)
+		}
 	}
 
 	return nil

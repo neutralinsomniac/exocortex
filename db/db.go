@@ -3,6 +3,7 @@ package db
 import (
 	"database/sql"
 	"strings"
+	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -42,7 +43,37 @@ func (e *ExoDB) Migrate() error {
 	if err := e.populateRowUUIDs(); err != nil {
 		return err
 	}
-	return e.populateTagUUIDs()
+	if err := e.populateTagUUIDs(); err != nil {
+		return err
+	}
+	return e.fixRowTimestamps()
+}
+
+// fixRowTimestamps assigns a current timestamp to any rows with a NULL or zero
+// updated_ts. These rows predate reliable timestamp tracking and would otherwise
+// be invisible to sync (sqlGetRowsSince filters on updated_ts > 0).
+func (e *ExoDB) fixRowTimestamps() error {
+	rows, err := e.conn.Query("SELECT id FROM row WHERE updated_ts IS NULL OR updated_ts = 0")
+	if err != nil {
+		return err
+	}
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err = rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+		ids = append(ids, id)
+	}
+	rows.Close()
+	now := time.Now().UnixNano()
+	for _, id := range ids {
+		if _, err = e.conn.Exec("UPDATE row SET updated_ts = ? WHERE id = ?", now, id); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // populateTagUUIDs assigns a UUID to any existing tags that predate the uuid column.
@@ -114,6 +145,10 @@ func (e *ExoDB) Open(filename string) error {
 	if err != nil {
 		goto End
 	}
+
+	// SQLite only supports one writer at a time; a single connection
+	// serialises all operations and prevents "database is locked" errors.
+	e.conn.SetMaxOpenConns(1)
 
 	err = e.enableForeignKeys()
 

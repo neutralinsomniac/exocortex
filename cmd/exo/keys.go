@@ -256,6 +256,20 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 			return syncResultMsg{err: err}
 		}
 
+	case "ctrl+s":
+		serverURL, _ := m.dbState.GetSetting("sync_url")
+		if serverURL == "" {
+			m.setErr("sync_url setting not configured")
+			break
+		}
+		token, _ := m.dbState.GetSetting("sync_token")
+		m.setStatus("syncing (full)...")
+		exoDB := m.dbState.ExoDB
+		return func() tea.Msg {
+			err := exoDB.ForceFullSyncWith(serverURL, token)
+			return syncResultMsg{err: err}
+		}
+
 	case "u":
 		m.applyUndo()
 
