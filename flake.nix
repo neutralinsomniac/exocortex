@@ -22,30 +22,43 @@
         lib = pkgs.lib;
         buildGoCache = build-go-cache.legacyPackages.${system}.buildGoCache;
         vendorHash = "sha256-yQuQ7/jDmKev/WxorsclgJOupPM3hHvgj3RPBU1sPQw=";
-        src = lib.cleanSource ./.;
+        src = lib.fileset.toSource {
+          root = ./.;
+          fileset = lib.fileset.unions [
+            ./cmd
+            ./db
+            ./go.mod
+            ./go.sum
+            ./imported-packages
+          ];
+        };
 
         goCache = buildGoCache {
           importPackagesFile = ./imported-packages;
           inherit src vendorHash;
         };
+
+        buildMyGoModule = (
+          cmd:
+          pkgs.buildGoModule {
+            inherit src;
+            inherit vendorHash;
+
+            buildInputs = [ goCache ];
+
+            name = cmd;
+            version = "1.2.0";
+            subPackages = [ "cmd/${cmd}" ];
+
+            doCheck = false;
+          }
+        );
       in
       rec {
         packages.default = packages.exo;
 
-        packages.exo = pkgs.buildGoModule {
-          name = "exo";
-          version = "1.1.0";
-
-          inherit src;
-
-          subPackages = [ "cmd/exo" ];
-
-          doCheck = false;
-
-          buildInputs = [ goCache ];
-
-          inherit vendorHash;
-        };
+        packages.exo = buildMyGoModule "exo";
+        packages.exo-server = buildMyGoModule "exo-server";
 
         devShell = pkgs.mkShell {
           packages = with pkgs; [
