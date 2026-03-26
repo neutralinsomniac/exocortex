@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"time"
@@ -12,17 +13,19 @@ import (
 // ForceFullSyncWith resets the push timestamp so that all local rows are
 // sent to the server, then performs a normal sync. Use this after a server
 // reset or when a peer is missing rows that were created before the last sync.
-func (e *ExoDB) ForceFullSyncWith(serverURL, token string) error {
+func (e *ExoDB) ForceFullSyncWith(serverURL, token string, encrypt bool) error {
 	if err := e.SetSetting("last_push_ts", "0"); err != nil {
 		return fmt.Errorf("reset push timestamp: %w", err)
 	}
-	return e.SyncWith(serverURL, token)
+	return e.SyncWith(serverURL, token, encrypt)
 }
 
 // SyncWith performs a bidirectional sync against the given server URL using
-// the shared Bearer token. The local DB is updated in place; the caller
+// the shared Bearer token. When encrypt is true the request and response
+// bodies are AES-256-GCM encrypted using a key derived from the token; use
+// this when TLS is not available. The local DB is updated in place; the caller
 // should call State.Refresh() afterwards to pick up new data.
-func (e *ExoDB) SyncWith(serverURL, token string) error {
+func (e *ExoDB) SyncWith(serverURL, token string, encrypt bool) error {
 	// last_sync_ts: server's ServerTS from last response — filters what the
 	// server sends back to us (we only want rows newer than our last pull).
 	lastSyncStr, err := e.GetSetting("last_sync_ts")
@@ -64,11 +67,20 @@ func (e *ExoDB) SyncWith(serverURL, token string) error {
 		return fmt.Errorf("marshal: %w", err)
 	}
 
+	contentType := "application/json"
+	if encrypt {
+		body, err = EncryptPayload(token, body)
+		if err != nil {
+			return fmt.Errorf("encrypt: %w", err)
+		}
+		contentType = "application/octet-stream"
+	}
+
 	req, err := http.NewRequest(http.MethodPost, serverURL+"/sync", bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("create request: %w", err)
 	}
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", contentType)
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
@@ -84,8 +96,19 @@ func (e *ExoDB) SyncWith(serverURL, token string) error {
 		return fmt.Errorf("server returned %s", resp.Status)
 	}
 
+	respBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("read response: %w", err)
+	}
+	if encrypt {
+		respBytes, err = DecryptPayload(token, respBytes)
+		if err != nil {
+			return fmt.Errorf("decrypt response: %w", err)
+		}
+	}
+
 	var remote SyncPayload
-	if err = json.NewDecoder(resp.Body).Decode(&remote); err != nil {
+	if err = json.Unmarshal(respBytes, &remote); err != nil {
 		return fmt.Errorf("decode response: %w", err)
 	}
 

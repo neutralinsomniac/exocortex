@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -33,6 +34,9 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Use symmetric encryption when TLS is not configured.
+	encrypt := *certFile == ""
+
 	exoDB := &db.ExoDB{}
 	if err := exoDB.Open(*dbFile); err != nil {
 		log.Fatal("open db:", err)
@@ -55,8 +59,21 @@ func main() {
 			return
 		}
 
+		bodyBytes, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "read body: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if encrypt {
+			bodyBytes, err = db.DecryptPayload(*token, bodyBytes)
+			if err != nil {
+				http.Error(w, "decrypt: "+err.Error(), http.StatusBadRequest)
+				return
+			}
+		}
+
 		var req db.SyncPayload
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if err := json.Unmarshal(bodyBytes, &req); err != nil {
 			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -75,15 +92,29 @@ func main() {
 			return
 		}
 
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(serverPayload)
+		respBytes, err := json.Marshal(serverPayload)
+		if err != nil {
+			http.Error(w, "marshal: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if encrypt {
+			respBytes, err = db.EncryptPayload(*token, respBytes)
+			if err != nil {
+				http.Error(w, "encrypt: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Type", "application/octet-stream")
+		} else {
+			w.Header().Set("Content-Type", "application/json")
+		}
+		w.Write(respBytes)
 	})
 
 	if *certFile != "" {
 		log.Printf("exo-server listening on %s (TLS)", *addr)
 		log.Fatal(http.ListenAndServeTLS(*addr, *certFile, *keyFile, nil))
 	} else {
-		log.Printf("exo-server listening on %s (plaintext)", *addr)
+		log.Printf("exo-server listening on %s (AES-256-GCM encrypted)", *addr)
 		log.Fatal(http.ListenAndServe(*addr, nil))
 	}
 }

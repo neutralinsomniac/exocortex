@@ -249,10 +249,11 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 			break
 		}
 		token, _ := m.dbState.GetSetting("sync_token")
+		encrypt := !strings.HasPrefix(serverURL, "https://")
 		m.setStatus("syncing...")
 		exoDB := m.dbState.ExoDB
 		return func() tea.Msg {
-			err := exoDB.SyncWith(serverURL, token)
+			err := exoDB.SyncWith(serverURL, token, encrypt)
 			return syncResultMsg{err: err}
 		}
 
@@ -263,10 +264,11 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 			break
 		}
 		token, _ := m.dbState.GetSetting("sync_token")
+		encrypt := !strings.HasPrefix(serverURL, "https://")
 		m.setStatus("syncing (full)...")
 		exoDB := m.dbState.ExoDB
 		return func() tea.Msg {
-			err := exoDB.ForceFullSyncWith(serverURL, token)
+			err := exoDB.ForceFullSyncWith(serverURL, token, encrypt)
 			return syncResultMsg{err: err}
 		}
 
