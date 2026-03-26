@@ -212,12 +212,12 @@ func sqlUpdateRowText(tx *sql.Tx, rowID int64, text string) error {
 	var row Row
 	var err error
 
-	statement, err = tx.Prepare("UPDATE row SET text = ? WHERE id = ?")
+	statement, err = tx.Prepare("UPDATE row SET text = ?, updated_ts = ? WHERE id = ?")
 	if err != nil {
 		goto End
 	}
 
-	_, err = statement.Exec(text, rowID)
+	_, err = statement.Exec(text, time.Now().UnixNano(), rowID)
 	if err != nil {
 		goto End
 	}
@@ -300,12 +300,12 @@ func (e *ExoDB) sqlUpdateRowRank(tx *sql.Tx, rowID int64, rank int) error {
 	var row Row
 	var err error
 
-	statement, err = tx.Prepare("UPDATE row SET rank = ? WHERE id = ?")
+	statement, err = tx.Prepare("UPDATE row SET rank = ?, updated_ts = ? WHERE id = ?")
 	if err != nil {
 		goto End
 	}
 
-	_, err = statement.Exec(rank, rowID)
+	_, err = statement.Exec(rank, time.Now().UnixNano(), rowID)
 	if err != nil {
 		goto End
 	}

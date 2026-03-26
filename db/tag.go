@@ -317,6 +317,13 @@ func (e *ExoDB) RenameTag(oldname string, newname string) (Tag, error) {
 		goto End
 	}
 
+	// Bump updated_ts on all rows belonging to this tag so they get re-synced
+	// with the correct tag name on the remote.
+	_, err = tx.Exec("UPDATE row SET updated_ts = ? WHERE tag_id = ?", time.Now().UnixNano(), tag.ID)
+	if err != nil {
+		goto End
+	}
+
 	refs, err = sqlGetRefsToTagByTagID(tx, tag.ID)
 	if err != nil {
 		goto End
