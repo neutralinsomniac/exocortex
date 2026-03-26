@@ -610,14 +610,14 @@ func (m *model) resolveUndoTag(entry undoEntry) db.Tag {
 	return db.Tag{}
 }
 
-// tagCompletePrefix returns the partial text after the last '[[' if the input
-// looks like an open tag reference (no matching ']]' yet), else ("", false).
-func tagCompletePrefix(val string) (string, bool) {
-	idx := strings.LastIndex(val, "[[")
+// tagCompletePrefix returns the partial text after the last '[[' if the text
+// before the cursor looks like an open tag reference (no matching ']]' yet), else ("", false).
+func tagCompletePrefix(beforeCursor string) (string, bool) {
+	idx := strings.LastIndex(beforeCursor, "[[")
 	if idx < 0 {
 		return "", false
 	}
-	after := val[idx+2:]
+	after := beforeCursor[idx+2:]
 	if strings.Contains(after, "]]") {
 		return "", false
 	}
@@ -625,7 +625,9 @@ func tagCompletePrefix(val string) (string, bool) {
 }
 
 func (m *model) updateTagComplete() {
-	prefix, ok := tagCompletePrefix(m.textInput.Value())
+	runes := []rune(m.textInput.Value())
+	beforeCursor := string(runes[:m.textInput.Position()])
+	prefix, ok := tagCompletePrefix(beforeCursor)
 	if !ok {
 		m.acActive = false
 		return
@@ -648,13 +650,22 @@ func (m *model) completeTag() {
 		return
 	}
 	tag := m.acTags[m.acCursor]
-	val := m.textInput.Value()
-	idx := strings.LastIndex(val, "[[")
+	runes := []rune(m.textInput.Value())
+	pos := m.textInput.Position()
+	beforeCursor := string(runes[:pos])
+	afterCursor := string(runes[pos:])
+	idx := strings.LastIndex(beforeCursor, "[[")
 	if idx < 0 {
 		return
 	}
-	m.textInput.SetValue(val[:idx] + "[[" + tag.Name + "]]")
-	m.textInput.CursorEnd()
+	closing := "]]"
+	if strings.HasPrefix(afterCursor, "]]") {
+		closing = ""
+	}
+	newVal := beforeCursor[:idx] + "[[" + tag.Name + closing + afterCursor
+	m.textInput.SetValue(newVal)
+	newPos := len([]rune(beforeCursor[:idx])) + 2 + len([]rune(tag.Name)) + 2
+	m.textInput.SetCursor(newPos)
 	m.acActive = false
 }
 
