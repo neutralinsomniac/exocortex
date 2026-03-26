@@ -81,6 +81,8 @@ type searchResult struct {
 
 type doneAnimTickMsg struct{}
 
+type syncResultMsg struct{ err error }
+
 func doneAnimTick() tea.Cmd {
 	return tea.Tick(10*time.Millisecond, func(time.Time) tea.Msg { return doneAnimTickMsg{} })
 }
@@ -721,6 +723,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				cmd = doneAnimTick()
 			}
+		}
+	case syncResultMsg:
+		if msg.err != nil {
+			m.setErr("sync: " + msg.err.Error())
+		} else {
+			m.setStatus("sync complete")
+			m.refresh()
 		}
 	case editorDoneMsg:
 		cmd = m.handleEditorDone(msg)

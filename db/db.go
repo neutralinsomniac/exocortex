@@ -24,6 +24,7 @@ func (e *ExoDB) Migrate() error {
 		`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '')`,
 		`ALTER TABLE row ADD COLUMN priority INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE row ADD COLUMN done INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE row ADD COLUMN uuid TEXT NOT NULL DEFAULT ''`,
 	}
 	for _, m := range migrations {
 		if _, err := e.conn.Exec(m); err != nil {
@@ -31,6 +32,30 @@ func (e *ExoDB) Migrate() error {
 				!strings.Contains(err.Error(), "already exists") {
 				return err
 			}
+		}
+	}
+	return e.populateRowUUIDs()
+}
+
+// populateRowUUIDs assigns a UUID to any existing rows that predate the uuid column.
+func (e *ExoDB) populateRowUUIDs() error {
+	rows, err := e.conn.Query("SELECT id FROM row WHERE uuid = ''")
+	if err != nil {
+		return err
+	}
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err = rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+		ids = append(ids, id)
+	}
+	rows.Close()
+	for _, id := range ids {
+		if _, err = e.conn.Exec("UPDATE row SET uuid = ? WHERE id = ?", newUUID(), id); err != nil {
+			return err
 		}
 	}
 	return nil

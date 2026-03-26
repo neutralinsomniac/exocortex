@@ -16,6 +16,7 @@ type Row struct {
 	Note        string
 	Priority    int
 	Done        bool
+	UUID        string
 }
 
 func sqlGetRowByID(tx *sql.Tx, id int64) (Row, error) {
@@ -23,9 +24,9 @@ func sqlGetRowByID(tx *sql.Tx, id int64) (Row, error) {
 	var sqlRow *sql.Row
 	var err error
 
-	sqlRow = tx.QueryRow("SELECT id, tag_id, text, rank, parent_row_id, updated_ts, note, priority, done FROM row WHERE id = $1", id)
+	sqlRow = tx.QueryRow("SELECT id, tag_id, text, rank, parent_row_id, updated_ts, note, priority, done, uuid FROM row WHERE id = $1", id)
 
-	err = sqlRow.Scan(&row.ID, &row.TagID, &row.Text, &row.Rank, &row.ParentRowID, &row.UpdatedTS, &row.Note, &row.Priority, &row.Done)
+	err = sqlRow.Scan(&row.ID, &row.TagID, &row.Text, &row.Rank, &row.ParentRowID, &row.UpdatedTS, &row.Note, &row.Priority, &row.Done, &row.UUID)
 	if err != nil {
 		goto End
 	}
@@ -96,7 +97,7 @@ func sqlGetRowsForTagID(tx *sql.Tx, tagID int64) ([]Row, error) {
 	var sqlRows *sql.Rows
 	var err error
 
-	sqlRows, err = tx.Query("SELECT id, tag_id, rank, text, parent_row_id, updated_ts, note, priority, done FROM row WHERE tag_id = $1 ORDER BY rank, id", tagID)
+	sqlRows, err = tx.Query("SELECT id, tag_id, rank, text, parent_row_id, updated_ts, note, priority, done, uuid FROM row WHERE tag_id = $1 ORDER BY rank, id", tagID)
 	if err != nil {
 		goto End
 	}
@@ -104,7 +105,7 @@ func sqlGetRowsForTagID(tx *sql.Tx, tagID int64) ([]Row, error) {
 
 	for sqlRows.Next() {
 		var row Row
-		err = sqlRows.Scan(&row.ID, &row.TagID, &row.Rank, &row.Text, &row.ParentRowID, &row.UpdatedTS, &row.Note, &row.Priority, &row.Done)
+		err = sqlRows.Scan(&row.ID, &row.TagID, &row.Rank, &row.Text, &row.ParentRowID, &row.UpdatedTS, &row.Note, &row.Priority, &row.Done, &row.UUID)
 		if err != nil {
 			goto End
 		}
@@ -135,18 +136,18 @@ End:
 	return rows, err
 }
 
-func sqlAddRow(tx *sql.Tx, tagID int64, text string, parentRowID int64, rank int) (int64, error) {
+func sqlAddRow(tx *sql.Tx, tagID int64, text string, parentRowID int64, rank int, uuid string) (int64, error) {
 	var statement *sql.Stmt
 	var res sql.Result
 	var rowID int64
 	var err error
 
-	statement, err = tx.Prepare("INSERT INTO row (tag_id, text, parent_row_id, rank, updated_ts) VALUES ($1, $2, $3, $4, $5)")
+	statement, err = tx.Prepare("INSERT INTO row (tag_id, text, parent_row_id, rank, updated_ts, uuid) VALUES ($1, $2, $3, $4, $5, $6)")
 	if err != nil {
 		goto End
 	}
 
-	res, err = statement.Exec(tagID, text, parentRowID, rank, time.Now().UnixNano())
+	res, err = statement.Exec(tagID, text, parentRowID, rank, time.Now().UnixNano(), uuid)
 	if err != nil {
 		goto End
 	}
@@ -186,7 +187,7 @@ func (e *ExoDB) AddRow(tagID int64, text string, parentRowID int64) (Row, error)
 		rank++
 	}
 
-	rowID, err = sqlAddRow(tx, tagID, text, parentRowID, rank)
+	rowID, err = sqlAddRow(tx, tagID, text, parentRowID, rank, newUUID())
 	if err != nil {
 		goto End
 	}

@@ -49,6 +49,7 @@ Press `?` inside the app to open the help screen.
 
 | Key | Action |
 |-----|--------|
+| `g` / `G` | Jump to first / last row |
 | `j` / `k` | Move cursor down / up |
 | `enter` | Follow tag link in selected row |
 | `o` / `O` | Add row below / above cursor |
@@ -64,5 +65,42 @@ Press `?` inside the app to open the help screen.
 | `!` `@` `#` `$` `%` | Set priority 1–5 (repeat to clear) |
 | `)` | Clear priority |
 | `u` / `U` | Undo / redo |
+| `S` | Sync with server |
 | `?` | Help |
 | `q` | Quit |
+
+## Sync
+
+`exo-server` is a companion binary that lets you keep a hosted exocortex database and sync to it from multiple machines. Sync is bidirectional with last-write-wins conflict resolution per row.
+
+### Running the server
+
+```
+go install github.com/neutralinsomniac/exocortex/cmd/exo-server@latest
+```
+
+```
+exo-server -db /path/to/exocortex.db -token <secret> -cert /path/to/cert.pem -key /path/to/key.pem
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-db` | (required) | Path to the SQLite database file |
+| `-token` | (required) | Shared secret used to authenticate clients |
+| `-cert` | | TLS certificate file (PEM). Must be paired with `-key` |
+| `-key` | | TLS private key file (PEM). Must be paired with `-cert` |
+| `-addr` | `:8765` | Address to listen on |
+
+Omitting `-cert` and `-key` runs the server in plaintext mode, which is only suitable for local testing.
+
+### Configuring the client
+
+Set the server URL and token in the exocortex settings table using any SQLite client:
+
+```sh
+sqlite3 ~/.local/share/exocortex/exocortex.db \
+  "INSERT OR REPLACE INTO settings VALUES ('sync_url', 'https://yourserver:8765');
+   INSERT OR REPLACE INTO settings VALUES ('sync_token', 'yoursecret');"
+```
+
+Once configured, press `S` inside `exo` to sync. Status is shown in the bottom bar.

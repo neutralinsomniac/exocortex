@@ -228,10 +228,33 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 			m.cursor++
 			m.clampLineOffset()
 		}
+	case "g":
+		m.cursor = 0
+		m.clampLineOffset()
+	case "G":
+		m.cursor = len(m.rowItems) - 1
+		if m.cursor < 0 {
+			m.cursor = 0
+		}
+		m.clampLineOffset()
 	case "pgup", "ctrl+b":
 		m.pageCursor(-1)
 	case "pgdown", "ctrl+f":
 		m.pageCursor(+1)
+
+	case "S":
+		serverURL, _ := m.dbState.GetSetting("sync_url")
+		if serverURL == "" {
+			m.setErr("sync_url setting not configured")
+			break
+		}
+		token, _ := m.dbState.GetSetting("sync_token")
+		m.setStatus("syncing...")
+		exoDB := m.dbState.ExoDB
+		return func() tea.Msg {
+			err := exoDB.SyncWith(serverURL, token)
+			return syncResultMsg{err: err}
+		}
 
 	case "u":
 		m.applyUndo()
