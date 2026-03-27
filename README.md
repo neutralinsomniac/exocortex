@@ -91,7 +91,13 @@ exo-server -db /path/to/exocortex.db -token <secret> -cert /path/to/cert.pem -ke
 | `-key` | | TLS private key file (PEM). Must be paired with `-cert` |
 | `-addr` | `:8765` | Address to listen on |
 
-Omitting `-cert` and `-key` runs the server in plaintext mode, which is only suitable for local testing.
+### Encryption modes
+
+**With `-cert` and `-key` (TLS):** The server listens with HTTPS. All traffic is encrypted via TLS. The sync payload is transmitted as plain JSON over the encrypted connection. Configure the client with an `https://` URL.
+
+**Without `-cert` and `-key` (symmetric encryption):** The server listens with plain HTTP, but the sync payload itself is encrypted end-to-end using AES-256-GCM. The encryption key is derived from the shared `-token` via SHA-256. Both request and response bodies are opaque binary blobs (`application/octet-stream`). No `Authorization` header is sent — a successful decryption already proves knowledge of the token, so the token never appears in plaintext on the wire. Configure the client with an `http://` URL.
+
+The client automatically selects the encryption mode based on the `sync_url` setting: `https://` URLs use TLS (no payload encryption), and `http://` URLs use AES-256-GCM payload encryption.
 
 ### Configuring the client
 

@@ -50,10 +50,6 @@ func main() {
 	}
 
 	http.HandleFunc("/sync", func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != "Bearer "+*token {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -65,9 +61,17 @@ func main() {
 			return
 		}
 		if encrypt {
+			// In symmetric mode, successful decryption proves knowledge of
+			// the token — no plaintext Authorization header needed or checked.
 			bodyBytes, err = db.DecryptPayload(*token, bodyBytes)
 			if err != nil {
-				http.Error(w, "decrypt: "+err.Error(), http.StatusBadRequest)
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
+		} else {
+			// In TLS mode, the Bearer token in the header is the auth check.
+			if r.Header.Get("Authorization") != "Bearer "+*token {
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
 				return
 			}
 		}

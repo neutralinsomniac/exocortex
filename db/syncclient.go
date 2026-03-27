@@ -81,7 +81,12 @@ func (e *ExoDB) SyncWith(serverURL, token string, encrypt bool) error {
 		return fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("Content-Type", contentType)
-	if token != "" {
+	// In TLS mode the header is protected by the transport layer.
+	// In symmetric-encryption mode we skip the header entirely — a
+	// successful AES-256-GCM decryption on the server already proves
+	// knowledge of the token, so sending it in plaintext would defeat the
+	// purpose.
+	if token != "" && !encrypt {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
