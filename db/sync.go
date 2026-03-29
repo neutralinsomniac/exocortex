@@ -260,22 +260,35 @@ func sqlUpsertTag(tx *sql.Tx, t Tag) (int64, error) {
 	var existing Tag
 	err := tx.QueryRow("SELECT id, name, updated_ts FROM tag WHERE uuid = ?", t.UUID).
 		Scan(&existing.ID, &existing.Name, &existing.UpdatedTS)
-	if err == sql.ErrNoRows {
-		res, insertErr := tx.Exec("INSERT INTO tag (name, updated_ts, uuid) VALUES (?, ?, ?)", t.Name, t.UpdatedTS, t.UUID)
-		if insertErr != nil {
-			return 0, insertErr
-		}
-		id, _ := res.LastInsertId()
-		return id, nil
-	}
-	if err != nil {
+	if err != nil && err != sql.ErrNoRows {
 		return 0, err
 	}
-	if t.UpdatedTS > existing.UpdatedTS {
-		// Update both name and timestamp: this is how renames propagate.
-		_, err = tx.Exec("UPDATE tag SET name = ?, updated_ts = ? WHERE id = ?", t.Name, t.UpdatedTS, existing.ID)
+	if err == nil {
+		// Found by UUID; propagate rename if remote is newer.
+		if t.UpdatedTS > existing.UpdatedTS {
+			_, err = tx.Exec("UPDATE tag SET name = ?, updated_ts = ? WHERE id = ?", t.Name, t.UpdatedTS, existing.ID)
+		}
+		return existing.ID, err
 	}
-	return existing.ID, err
+
+	// Not found by UUID. Fall back to name lookup — handles the case where the
+	// same tag was created independently on two devices before their first sync.
+	var nameMatch Tag
+	nameErr := tx.QueryRow("SELECT id FROM tag WHERE name = ?", t.Name).Scan(&nameMatch.ID)
+	if nameErr != nil && nameErr != sql.ErrNoRows {
+		return 0, nameErr
+	}
+	if nameErr == nil {
+		return nameMatch.ID, nil
+	}
+
+	// Truly new tag: insert it.
+	res, insertErr := tx.Exec("INSERT INTO tag (name, updated_ts, uuid) VALUES (?, ?, ?)", t.Name, t.UpdatedTS, t.UUID)
+	if insertErr != nil {
+		return 0, insertErr
+	}
+	id, _ := res.LastInsertId()
+	return id, nil
 }
 
 // sqlUpsertRow creates or updates a row by UUID (LWW on updated_ts).
