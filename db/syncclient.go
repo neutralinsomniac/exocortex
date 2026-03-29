@@ -98,7 +98,8 @@ func (e *ExoDB) SyncWith(serverURL, token string, encrypt bool) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("server returned %s", resp.Status)
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("server returned %s: %s", resp.Status, bytes.TrimSpace(body))
 	}
 
 	respBytes, err := io.ReadAll(resp.Body)

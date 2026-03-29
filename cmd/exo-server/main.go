@@ -86,24 +86,28 @@ func main() {
 		// only what the client doesn't already know about.
 		serverPayload, err := exoDB.BuildSyncPayload(req.Since)
 		if err != nil {
+			log.Printf("error: build payload: %v", err)
 			http.Error(w, "build payload: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
 		serverPayload.ServerTS = time.Now().UnixNano()
 
 		if err := exoDB.ApplyChanges(req); err != nil {
+			log.Printf("error: apply changes: %v", err)
 			http.Error(w, "apply changes: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
 
 		respBytes, err := json.Marshal(serverPayload)
 		if err != nil {
+			log.Printf("error: marshal: %v", err)
 			http.Error(w, "marshal: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
 		if encrypt {
 			respBytes, err = db.EncryptPayload(*token, respBytes)
 			if err != nil {
+				log.Printf("error: encrypt: %v", err)
 				http.Error(w, "encrypt: "+err.Error(), http.StatusInternalServerError)
 				return
 			}
