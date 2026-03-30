@@ -1,6 +1,9 @@
 # exocortex
 
-A note-taking/todo/information-storage system written in Go. The primary interface is **exo**, a terminal UI built with [bubbletea](https://github.com/charmbracelet/bubbletea).
+A note-taking/todo/information-storage system. There are two clients:
+
+- **exo** — a terminal UI for desktop/laptop, written in Go with [bubbletea](https://github.com/charmbracelet/bubbletea)
+- **tdeck-exo** — a firmware port for the [LilyGo T-Deck Plus](https://www.lilygo.cc/products/t-deck), a portable device with a 320×240 display and a physical QWERTY keyboard
 
 ## Concepts
 
@@ -68,6 +71,76 @@ Press `?` inside the app to open the help screen.
 | `S` | Sync with server |
 | `?` | Help |
 | `q` | Quit |
+
+## T-Deck Plus firmware (tdeck-exo)
+
+The `tdeck-exo/` directory contains a PlatformIO project that builds firmware for the LilyGo T-Deck Plus. It shares the same sync protocol as `exo`, so a T-Deck and a desktop instance stay in sync through the same server.
+
+### Building
+
+Open `tdeck-exo/` in [PlatformIO](https://platformio.org/) and flash the `lilygo_tdeck_plus` environment.
+
+### Configuration
+
+Edit `tdeck-exo/src/config.h` before flashing:
+
+| Setting | Description |
+|---------|-------------|
+| `WIFI_SSID` / `WIFI_PASSWORD` | Network to connect to for sync and NTP |
+| `SYNC_URL` | Server URL — `https://` for TLS, `http://` for AES-256-GCM payload encryption |
+| `SYNC_TOKEN` | Shared secret matching the server's `-token` flag |
+| `TLS_INSECURE` | Set `false` to verify the server's TLS certificate |
+| `NTP_SERVER` | NTP server for time sync (default: `pool.ntp.org`) |
+| `TZ_OFFSET_HOURS` | UTC offset for your timezone (e.g. `-5` for EST) |
+| `BOARD_BAT_ADC` | GPIO pin for battery voltage ADC (default: `4`) |
+| `SLEEP_TIMEOUT_MS` | Deep sleep after this many ms of inactivity (default: `30000`; set to `0` to disable) |
+| `STATIC_IP` | *(optional)* Static IP address — bypasses DHCP, avoids repeated DHCP requests on each wake |
+| `STATIC_GATEWAY` | *(optional)* Gateway address (required if `STATIC_IP` is set) |
+| `STATIC_SUBNET` | *(optional)* Subnet mask (required if `STATIC_IP` is set) |
+| `STATIC_DNS` | *(optional)* DNS server (required if `STATIC_IP` is set) |
+
+### Keybindings
+
+#### Tag list
+
+| Key | Action |
+|-----|--------|
+| `j` / `k` or trackball | Move cursor |
+| `Enter` | Open tag |
+| `i` | Go to inbox |
+| `n` | New tag |
+| Type | Filter tags |
+| `Backspace` | Clear filter / return to row list |
+
+#### Row list
+
+| Key | Action |
+|-----|--------|
+| `j` / `k` or trackball | Move cursor |
+| `o` | New row |
+| `e` | Edit selected row |
+| `d` | Cut selected row (copied to clipboard) |
+| `y` | Yank (copy) selected row |
+| `p` / `P` | Paste clipboard row after / before cursor |
+| `D` | Toggle done |
+| `1`–`5` | Set priority (press same key again to clear) |
+| `0` | Clear priority |
+| `J` / `K` | Move row up / down within its priority group |
+| `h` | Toggle show/hide done rows |
+| `Enter` / `l` | Follow `[[tag]]` link in selected row |
+| `b` | Go back in tag history |
+| `t` | Tag list |
+| `i` | Go to inbox |
+| `s` | Sync with server |
+| `Backspace` | Sleep immediately |
+
+#### Row edit
+
+| Key | Action |
+|-----|--------|
+| Trackball left / right | Move cursor within text |
+| `Enter` | Save |
+| `Escape` | Cancel |
 
 ## Sync
 
