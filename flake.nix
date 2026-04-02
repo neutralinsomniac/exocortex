@@ -18,7 +18,10 @@
     flake-utils.lib.eachDefaultSystem (
       system:
       let
-        pkgs = import nixpkgs { inherit system; };
+        pkgs = import nixpkgs {
+          inherit system;
+          config.allowUnfree = true;
+        };
         lib = pkgs.lib;
         buildGoCache = build-go-cache.legacyPackages.${system}.buildGoCache;
         vendorHash = "sha256-yQuQ7/jDmKev/WxorsclgJOupPM3hHvgj3RPBU1sPQw=";
@@ -64,6 +67,8 @@
           packages = with pkgs; [
             pkg-config
             gcc
+            vscode
+            platformio
           ];
         };
       }
