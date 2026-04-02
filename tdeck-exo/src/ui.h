@@ -8,6 +8,7 @@ enum class UIState {
     ROW_LIST,
     ROW_EDIT,
     SYNCING,
+    HELP,
 };
 
 // Initialize display hardware and show boot screen.

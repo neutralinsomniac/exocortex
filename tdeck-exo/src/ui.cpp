@@ -71,6 +71,7 @@ static lgfx::LGFX_Sprite sprite(&lcd);   // double-buffer
 
 static UIState  state          = UIState::BOOT;
 static bool     dirty          = true;
+static int      helpPage       = 0;
 static String   statusMsg;
 static uint32_t lastActivityMs = 0;
 
@@ -358,7 +359,7 @@ void uiDraw() {
             hdrRight = buf;
         }
         drawHeader("[" + tagName + "]", hdrRight);
-        drawFooter("o/O:new e:edit d:cut y:yank p/P:paste D:done s:sync");
+        drawFooter("press ? for help");
 
         int visible = contentRows();
         for (int i = 0; i < visible; i++) {
@@ -404,6 +405,42 @@ void uiDraw() {
             sprite.print(c);
             xpos += cw;
         }
+        break;
+    }
+
+    // ── HELP ─────────────────────────────────────────────────────────────────
+    case UIState::HELP: {
+        drawHeader(helpPage == 0 ? "Keys (1/2)" : "Keys (2/2)");
+        sprite.fillRect(0, CHAR_H, SCREEN_W, SCREEN_H - 2*CHAR_H, COL_BG);
+        sprite.setTextColor(COL_FG, COL_BG);
+        static const char* page0[] = {
+            "j/k       move cursor",
+            "o/O       new row below/above",
+            "e         edit row",
+            "d         cut row",
+            "y         yank row",
+            "p/P       paste after/before",
+            "D         toggle done",
+            "J/K       move row in group",
+            "h         show/hide done",
+            "1-5       set priority",
+            "0         clear priority",
+            "s         sync",
+            "t         tag list",
+        };
+        static const char* page1[] = {
+            "b         back",
+            "i         inbox",
+            "Bsp       sleep",
+        };
+        const char** lines = helpPage == 0 ? page0 : page1;
+        int n = helpPage == 0 ? sizeof(page0)/sizeof(page0[0])
+                              : sizeof(page1)/sizeof(page1[0]);
+        for (int i = 0; i < n; i++) {
+            sprite.setCursor(2, CHAR_H + i * CHAR_H);
+            sprite.print(lines[i]);
+        }
+        drawFooter(helpPage == 0 ? "any key:next" : "any key:close");
         break;
     }
     }
@@ -669,6 +706,10 @@ void uiHandleKey(char key) {
             refreshFilteredTags();
             state = UIState::TAG_LIST;
             dirty = true;
+        } else if (key == '?') {
+            helpPage = 0;
+            state = UIState::HELP;
+            dirty = true;
         } else if (key == Key::BACKSPACE) {
             goToSleep();
         } else if (key == 'i') {
@@ -686,6 +727,19 @@ void uiHandleKey(char key) {
                 dirty     = true;
             }
         }
+        break;
+
+    // ── HELP keys ────────────────────────────────────────────────────────────
+    case UIState::HELP:
+        // ignore trackball directional inputs
+        if (key == Key::UP || key == Key::DOWN || key == Key::LEFT || key == Key::RIGHT)
+            break;
+        if (helpPage == 0) {
+            helpPage = 1;
+        } else {
+            state = UIState::ROW_LIST;
+        }
+        dirty = true;
         break;
 
     // ── ROW_EDIT keys ────────────────────────────────────────────────────────
