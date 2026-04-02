@@ -115,11 +115,11 @@ static uint8_t batteryPct = 0;
 
 static void refreshBattery() {
     // Battery voltage via ADC with 1:2 voltage divider.
-    // Average 8 samples to reduce noise.
+    // analogReadMilliVolts uses ESP32 factory eFuse calibration for accuracy.
     analogSetPinAttenuation(BOARD_BAT_ADC, ADC_11db);  // 0–3.3 V range
-    int32_t sum = 0;
-    for (int i = 0; i < 8; i++) sum += analogRead(BOARD_BAT_ADC);
-    float voltage = (sum / 8.0f / 4095.0f) * 3.3f * 2.0f;  // undo divider
+    uint32_t mv = 0;
+    for (int i = 0; i < 8; i++) mv += analogReadMilliVolts(BOARD_BAT_ADC);
+    float voltage = (mv / 8.0f / 1000.0f) * 2.0f;  // undo 1:2 divider
     // LiPo: 3.0 V = 0%, 4.2 V = 100%
     float pct = (voltage - 3.0f) / 1.2f * 100.0f;
     if (pct < 0.0f)   pct = 0.0f;
