@@ -281,11 +281,7 @@ void uiDraw() {
     switch (state) {
     // ── BOOT ────────────────────────────────────────────────────────────────
     case UIState::BOOT:
-        sprite.setTextColor(COL_FG, COL_BG);
-        sprite.setCursor(SCREEN_W/2 - sprite.textWidth("exocortex")/2, SCREEN_H/2 - CHAR_H);
-        sprite.print("exocortex");
-        sprite.setCursor(2, SCREEN_H/2);
-        sprite.print(statusMsg);
+        // blank screen — boot is fast enough that no loading UI is needed
         break;
 
     // ── TAG_NEW ──────────────────────────────────────────────────────────────
@@ -795,9 +791,8 @@ void uiInitHardware() {
     sprite.setFont(&lgfx::fonts::Font2);
     sprite.setTextSize(1);
 
-    state     = UIState::BOOT;
-    statusMsg = "Starting...";
-    dirty     = true;
+    state = UIState::BOOT;
+    dirty = true;
     uiDraw();
 }
 
