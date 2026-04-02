@@ -102,8 +102,9 @@ static bool             showDone     = false;
 
 // ROW_EDIT / TAG_NEW state
 static String editBuf;
-static int    editCursor = 0;    // insertion point within editBuf
-static int    editRowIdx = -1;   // -1 = new row
+static int    editCursor    = 0;   // insertion point within editBuf
+static int    editRowIdx    = -1;  // -1 = new row
+static int    editInsertPos = -1;  // target visible index for new-row insertion (-1 = append)
 
 // Clipboard (cut/yank + paste)
 static bool   hasClipboard = false;
@@ -359,7 +360,7 @@ void uiDraw() {
             hdrRight = buf;
         }
         drawHeader("[" + tagName + "]", hdrRight);
-        drawFooter("o:new e:edit d:cut y:yank p/P:paste D:done s:sync");
+        drawFooter("o/O:new e:edit d:cut y:yank p/P:paste D:done s:sync");
 
         int visible = contentRows();
         for (int i = 0; i < visible; i++) {
@@ -509,12 +510,21 @@ void uiHandleKey(char key) {
             state   = UIState::TAG_NEW;
             dirty   = true;
         } else if (key == 'o') {
-            // New row
-            editBuf    = "";
-            editCursor = 0;
-            editRowIdx = -1;
-            state      = UIState::ROW_EDIT;
-            dirty      = true;
+            // New row below cursor
+            editBuf       = "";
+            editCursor    = 0;
+            editRowIdx    = -1;
+            editInsertPos = visibleRows.empty() ? 0 : rowCursor + 1;
+            state         = UIState::ROW_EDIT;
+            dirty         = true;
+        } else if (key == 'O') {
+            // New row above cursor
+            editBuf       = "";
+            editCursor    = 0;
+            editRowIdx    = -1;
+            editInsertPos = visibleRows.empty() ? 0 : rowCursor;
+            state         = UIState::ROW_EDIT;
+            dirty         = true;
         } else if (key == 'e') {
             // Edit selected row
             if (!visibleRows.empty() && rowCursor < (int)visibleRows.size()) {
@@ -688,10 +698,25 @@ void uiHandleKey(char key) {
             if (!text.isEmpty()) {
                 if (editRowIdx < 0) {
                     g_storage.addRow(currentTagUUID, text);
-                    g_storage.save();
+                    int newIdx = (int)g_storage.rows.size() - 1;
                     refreshVisibleRows();
-                    rowCursor = std::max(0, (int)visibleRows.size() - 1);
-                    clampRowCursor();
+                    if (editInsertPos >= 0) {
+                        int target = std::min(editInsertPos, (int)visibleRows.size() - 1);
+                        int cur    = (int)visibleRows.size() - 1;
+                        for (int i = 0; i < (int)visibleRows.size(); i++)
+                            if (visibleRows[i] == newIdx) { cur = i; break; }
+                        while (cur > target) {
+                            const Row& a = g_storage.rows[visibleRows[cur]];
+                            const Row& b = g_storage.rows[visibleRows[cur - 1]];
+                            if (a.done != b.done || a.priority != b.priority) break;
+                            g_storage.swapRowRanks(visibleRows[cur], visibleRows[cur - 1]);
+                            std::swap(visibleRows[cur], visibleRows[cur - 1]);
+                            cur--;
+                        }
+                        refreshVisibleRows();
+                    }
+                    g_storage.save();
+                    followRowCursor(newIdx);
                 } else {
                     g_storage.updateRowText(editRowIdx, text);
                     g_storage.save();
