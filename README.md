@@ -27,6 +27,38 @@ Or with Nix:
 nix run github:neutralinsomniac/exocortex
 ```
 
+To install into a NixOS configuration flake, add it as an input and pass it through to your NixOS module:
+
+```nix
+{
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
+    exocortex.url = "github:neutralinsomniac/exocortex";
+    exocortex.inputs.nixpkgs.follows = "nixpkgs";
+  };
+
+  outputs = { nixpkgs, exocortex, ... } @ inputs: {
+    nixosConfigurations.myhostname = nixpkgs.lib.nixosSystem {
+      system = "x86_64-linux";
+      specialArgs = { inherit inputs; };
+      modules = [ ./configuration.nix ];
+    };
+  };
+}
+```
+
+Then in `configuration.nix`:
+
+```nix
+{ pkgs, inputs, ... }:
+{
+  environment.systemPackages = [
+    inputs.exocortex.packages.${pkgs.system}.exo
+    inputs.exocortex.packages.${pkgs.system}.exo-server
+  ];
+}
+```
+
 ## Usage
 
 Run `exo` from anywhere. All data is stored in a single SQLite database at `$XDG_DATA_HOME/exocortex/exocortex.db` (defaulting to `~/.local/share/exocortex/exocortex.db`).
