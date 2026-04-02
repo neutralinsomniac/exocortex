@@ -332,6 +332,7 @@ void uiDraw() {
             statusMsg = syncSuccess ? "S" : "!";
             refreshVisibleRows();
             clampRowCursor();
+            dirty = true;
         }
         wasSyncing = syncRunning;
 
