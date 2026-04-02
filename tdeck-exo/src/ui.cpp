@@ -75,6 +75,13 @@ static int      helpPage       = 0;
 static String   statusMsg;
 static uint32_t lastActivityMs = 0;
 
+// ── Cursor row marquee scroll ─────────────────────────────────────────────────
+static int      scrollOffset       = 0;    // pixels scrolled left
+static int      scrollDir          = 1;    // +1 = scrolling left, -1 = right
+static uint32_t scrollPauseUntil   = 0;
+static int      lastScrollRowIdx   = -1;   // g_storage.rows index, not cursor pos
+static uint32_t lastScrollMs       = 0;
+
 // ── Background sync ───────────────────────────────────────────────────────────
 
 static volatile bool syncRunning = false;
@@ -249,16 +256,29 @@ static void drawFooter(const String& hints) {
     sprite.print(hints);
 }
 
-static void drawRow(int screenRow, const String& text, bool cursor, bool done, int priority) {
+static void drawRow(int screenRow, const String& text, bool cursor, bool done, int priority, int xScroll = 0) {
     int y = CHAR_H + screenRow * CHAR_H;   // skip header
 
     uint16_t bg = cursor ? COL_CURSOR_BG : COL_BG;
     sprite.fillRect(0, y, SCREEN_W, CHAR_H, bg);
 
-    sprite.setCursor(0, y);
-
-    // Priority column: coloured number matching desktop TUI, dimmed dash if unset or done
     static const uint16_t priColors[] = { 0, COL_PRIO1_FG, COL_PRIO2_FG, COL_PRIO3_FG, COL_PRIO4_FG, COL_PRIO5_FG };
+
+    // Measure prefix width once (AsciiFont8x16: 2 chars × 8px = 16)
+    const int prefixW = (int)sprite.textWidth("- ");
+
+    // Draw row text at scrolled position, skipping characters fully off-screen left.
+    // Avoids negative cursor x which LovyanGFX does not handle correctly.
+    const int FONT_W   = 8;  // AsciiFont8x16: fixed 8 px/char
+    int firstChar      = xScroll / FONT_W;
+    int subPx          = xScroll % FONT_W;
+    sprite.setCursor(prefixW - subPx, y);
+    sprite.setTextColor(done ? COL_DONE_FG : COL_FG, bg);
+    sprite.print(text.substring(firstChar));
+
+    // Repaint priority column on top of any text that scrolled into it
+    sprite.fillRect(0, y, prefixW, CHAR_H, bg);
+    sprite.setCursor(0, y);
     if (!done && priority >= 1 && priority <= 5) {
         sprite.setTextColor(priColors[priority], bg);
         sprite.print(String(priority));
@@ -268,8 +288,13 @@ static void drawRow(int screenRow, const String& text, bool cursor, bool done, i
     }
     sprite.print(" ");
 
-    sprite.setTextColor(done ? COL_DONE_FG : COL_FG, bg);
-    sprite.print(text);
+    // Right-overflow indicator: draw '>' over the last column if text continues off-screen
+    if ((int)text.length() * FONT_W > xScroll + (SCREEN_W - prefixW)) {
+        sprite.fillRect(SCREEN_W - FONT_W, y, FONT_W, CHAR_H, bg);
+        sprite.setCursor(SCREEN_W - FONT_W, y);
+        sprite.setTextColor(COL_FG, bg);
+        sprite.print(">");
+    }
 }
 
 void uiDraw() {
@@ -372,7 +397,7 @@ void uiDraw() {
             int rowIdx = visibleRows[listIdx];
             const Row& r = g_storage.rows[rowIdx];
             bool isCursor = (listIdx == rowCursor);
-            drawRow(i, r.text, isCursor, r.done, r.priority);
+            drawRow(i, r.text, isCursor, r.done, r.priority, isCursor ? scrollOffset : 0);
         }
         break;
     }
@@ -825,14 +850,52 @@ void uiTick() {
 #endif
 
     if (state != UIState::ROW_LIST || syncRunning) return;
+
+    uint32_t now = millis();
+
     static uint32_t lastMin = UINT32_MAX;
     struct tm ti;
-    if (!getLocalTime(&ti, 0)) return;
-    uint32_t curMin = (uint32_t)ti.tm_hour * 60 + ti.tm_min;
-    if (curMin != lastMin) {
-        lastMin = curMin;
-        refreshBattery();
-        dirty   = true;
+    if (getLocalTime(&ti, 0)) {
+        uint32_t curMin = (uint32_t)ti.tm_hour * 60 + ti.tm_min;
+        if (curMin != lastMin) {
+            lastMin = curMin;
+            refreshBattery();
+            dirty = true;
+        }
+    }
+
+    // Marquee scroll for the cursor row
+    if (!visibleRows.empty() && rowCursor < (int)visibleRows.size()) {
+        int curRowIdx = visibleRows[rowCursor];
+
+        // Reset when the actual row changes
+        if (curRowIdx != lastScrollRowIdx) {
+            lastScrollRowIdx  = curRowIdx;
+            scrollOffset      = 0;
+            scrollDir         = 1;
+            scrollPauseUntil  = now + 500;
+            dirty             = true;
+        }
+
+        const Row& r   = g_storage.rows[curRowIdx];
+        int textPx     = r.text.length() * 8;   // AsciiFont8x16: 8 px/char, fixed-width
+        int prefixPx   = (int)sprite.textWidth("- ");
+        int maxScroll  = textPx - (SCREEN_W - prefixPx);
+
+        if (maxScroll > 0 && now >= scrollPauseUntil && now - lastScrollMs >= 30) {
+            lastScrollMs   = now;
+            scrollOffset  += scrollDir * 4;
+            if (scrollOffset >= maxScroll) {
+                scrollOffset     = maxScroll;
+                scrollDir        = -1;
+                scrollPauseUntil = now + 800;
+            } else if (scrollOffset <= 0) {
+                scrollOffset     = 0;
+                scrollDir        = 1;
+                scrollPauseUntil = now + 800;
+            }
+            dirty = true;
+        }
     }
 }
 
