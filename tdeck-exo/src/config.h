@@ -68,4 +68,9 @@
 #define COL_ACCENT      0x07FF   // cyan  (header/footer bar)
 #define COL_CURSOR_BG   0x39C7   // dark blue highlight
 #define COL_DONE_FG     0x8410   // grey  (done rows)
-#define COL_PRIO_FG     0xFD20   // orange (priority rows)
+// Priority colours match the desktop TUI: 1=red, 2=yellow, 3=green, 4=white, 5=grey
+#define COL_PRIO1_FG    0xF800   // red
+#define COL_PRIO2_FG    0xFFE0   // yellow
+#define COL_PRIO3_FG    0x07E0   // green
+#define COL_PRIO4_FG    0xFFFF   // white (same as COL_FG)
+#define COL_PRIO5_FG    0x8410   // grey  (same as COL_DONE_FG)

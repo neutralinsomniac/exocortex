@@ -256,9 +256,10 @@ static void drawRow(int screenRow, const String& text, bool cursor, bool done, i
 
     sprite.setCursor(0, y);
 
-    // Priority column: number in orange, dimmed dash if unset or done
-    if (!done && priority > 0) {
-        sprite.setTextColor(COL_PRIO_FG, bg);
+    // Priority column: coloured number matching desktop TUI, dimmed dash if unset or done
+    static const uint16_t priColors[] = { 0, COL_PRIO1_FG, COL_PRIO2_FG, COL_PRIO3_FG, COL_PRIO4_FG, COL_PRIO5_FG };
+    if (!done && priority >= 1 && priority <= 5) {
+        sprite.setTextColor(priColors[priority], bg);
         sprite.print(String(priority));
     } else {
         sprite.setTextColor(COL_DONE_FG, bg);
