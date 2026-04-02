@@ -58,7 +58,7 @@
 #define SCREEN_W  320
 #define SCREEN_H  240
 
-// Row height in pixels for lgfx::fonts::Font2 at textsize 1
+// Row height in pixels for lgfx::fonts::AsciiFont8x16 at textsize 1
 #define CHAR_H    16
 #define ROWS      (SCREEN_H / CHAR_H)   // 15
 

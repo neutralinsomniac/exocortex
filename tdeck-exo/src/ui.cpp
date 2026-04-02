@@ -276,7 +276,7 @@ void uiDraw() {
     dirty = false;
 
     sprite.fillScreen(COL_BG);
-    sprite.setFont(&lgfx::fonts::Font2);
+    sprite.setFont(&lgfx::fonts::AsciiFont8x16);
     sprite.setTextSize(1);
 
     switch (state) {
@@ -790,7 +790,7 @@ void uiInitHardware() {
     lcd.setBrightness(200);
 
     sprite.createSprite(SCREEN_W, SCREEN_H);
-    sprite.setFont(&lgfx::fonts::Font2);
+    sprite.setFont(&lgfx::fonts::AsciiFont8x16);
     sprite.setTextSize(1);
 
     state = UIState::BOOT;
