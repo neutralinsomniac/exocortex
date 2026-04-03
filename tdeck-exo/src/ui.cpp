@@ -95,6 +95,14 @@ static void syncTask(void*) {
     vTaskDelete(nullptr);
 }
 
+static void forceSyncTask(void*) {
+    String out;
+    syncSuccess = (doForceSync(out) == SyncResult::OK);
+    Serial.println(syncSuccess ? "Force sync OK: " + out : "Force sync ERR: " + out);
+    syncRunning = false;
+    vTaskDelete(nullptr);
+}
+
 // TAG_LIST state
 static std::vector<int> filteredTagIdx;  // indices into g_storage.tags
 static int      tagCursor   = 0;
@@ -450,7 +458,7 @@ void uiDraw() {
             "h         show/hide done",
             "1-5       set priority",
             "0         clear priority",
-            "s         sync",
+            "s/S       sync/force sync",
             "t         tag list",
         };
         static const char* page1[] = {
@@ -722,6 +730,14 @@ void uiHandleKey(char key) {
                 syncRunning = true;
                 statusMsg   = "";
                 xTaskCreatePinnedToCore(syncTask, "sync", 8192, nullptr, 1, nullptr, 0);
+                dirty = true;
+            }
+        } else if (key == 'S') {
+            // Force full sync: resets timestamps so all rows are exchanged
+            if (!syncRunning) {
+                syncRunning = true;
+                statusMsg   = "";
+                xTaskCreatePinnedToCore(forceSyncTask, "sync", 8192, nullptr, 1, nullptr, 0);
                 dirty = true;
             }
         } else if (key == 't') {

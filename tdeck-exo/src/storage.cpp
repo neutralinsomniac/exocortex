@@ -326,7 +326,12 @@ void ExoStorage::applyRemote(const std::vector<RemoteTag>&  remoteTags,
             if (rows[i].uuid == rr.uuid) { found = i; break; }
 
         if (found < 0) {
-            rows.push_back(rr);
+            // Don't resurrect a row we've locally tombstoned at a newer timestamp.
+            bool tombstoned = false;
+            for (const Tombstone& ts : deletedRows)
+                if (ts.key == rr.uuid && ts.deletedTS >= rr.updatedTS) { tombstoned = true; break; }
+            if (!tombstoned)
+                rows.push_back(rr);
         } else if (rr.updatedTS > rows[found].updatedTS) {
             rows[found] = rr;
         }

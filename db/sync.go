@@ -294,6 +294,14 @@ func sqlUpsertTag(tx *sql.Tx, t Tag) (int64, error) {
 // sqlUpsertRow creates or updates a row by UUID (LWW on updated_ts).
 // Returns the local row ID of the affected row, or 0 if no change was made.
 func sqlUpsertRow(tx *sql.Tx, r Row) (int64, error) {
+	// If we have a local tombstone newer than the incoming row, our deletion
+	// wins — don't resurrect a row we've already deleted.
+	var tombstoneTS int64
+	tombErr := tx.QueryRow("SELECT deleted_ts FROM row_tombstone WHERE uuid = ?", r.UUID).Scan(&tombstoneTS)
+	if tombErr == nil && tombstoneTS >= r.UpdatedTS {
+		return 0, nil
+	}
+
 	var localID, localUpdatedTS int64
 	err := tx.QueryRow("SELECT id, updated_ts FROM row WHERE uuid = ?", r.UUID).
 		Scan(&localID, &localUpdatedTS)

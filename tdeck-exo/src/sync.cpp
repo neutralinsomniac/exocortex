@@ -345,3 +345,9 @@ SyncResult doSync(String& statusOut) {
     statusOut = "Sync OK (" + String(remoteRows.size()) + " rows in)";
     return SyncResult::OK;
 }
+
+SyncResult doForceSync(String& statusOut) {
+    g_storage.lastSyncTS = 0;
+    g_storage.lastPushTS = 0;
+    return doSync(statusOut);
+}

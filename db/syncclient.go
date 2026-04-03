@@ -17,6 +17,9 @@ func (e *ExoDB) ForceFullSyncWith(serverURL, token string, encrypt bool) error {
 	if err := e.SetSetting("last_push_ts", "0"); err != nil {
 		return fmt.Errorf("reset push timestamp: %w", err)
 	}
+	if err := e.SetSetting("last_sync_ts", "0"); err != nil {
+		return fmt.Errorf("reset sync timestamp: %w", err)
+	}
 	return e.SyncWith(serverURL, token, encrypt)
 }
 

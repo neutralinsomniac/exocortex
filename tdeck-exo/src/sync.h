@@ -13,3 +13,7 @@ enum class SyncResult {
 // Updates g_storage in place; caller should redraw UI afterwards.
 // statusOut receives a human-readable status message.
 SyncResult doSync(String& statusOut);
+
+// Like doSync but resets lastSyncTS and lastPushTS first, requesting all
+// rows/tombstones from the server regardless of timestamp.
+SyncResult doForceSync(String& statusOut);
