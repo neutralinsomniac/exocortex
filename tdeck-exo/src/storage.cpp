@@ -215,6 +215,13 @@ bool ExoStorage::swapRowRanks(int rowIdxA, int rowIdxB) {
     return true;
 }
 
+bool ExoStorage::renameTag(int tagIdx, const String& newName) {
+    if (tagIdx < 0 || tagIdx >= (int)tags.size()) return false;
+    tags[tagIdx].name      = newName;
+    tags[tagIdx].updatedTS = nowNanos();
+    return true;
+}
+
 bool ExoStorage::deleteTag(int tagIdx) {
     if (tagIdx < 0 || tagIdx >= (int)tags.size()) return false;
     String uuid = tags[tagIdx].uuid;

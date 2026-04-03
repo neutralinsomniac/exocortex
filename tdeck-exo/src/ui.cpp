@@ -332,6 +332,19 @@ void uiDraw() {
         }
         break;
 
+    // ── TAG_RENAME ───────────────────────────────────────────────────────────
+    case UIState::TAG_RENAME:
+        drawHeader("Rename tag");
+        drawFooter("Enter:save  Bsp:delete char  Esc:cancel");
+        {
+            int y = CHAR_H + CHAR_H;
+            sprite.fillRect(0, CHAR_H, SCREEN_W, SCREEN_H - 2*CHAR_H, COL_BG);
+            sprite.setTextColor(COL_FG, COL_BG);
+            sprite.setCursor(2, y);
+            sprite.print(editBuf + "_");
+        }
+        break;
+
     // ── TAG_LIST ─────────────────────────────────────────────────────────────
     case UIState::TAG_LIST: {
         String header = "TAGS";
@@ -458,10 +471,11 @@ void uiDraw() {
             "h         show/hide done",
             "1-5       set priority",
             "0         clear priority",
+            "r         rename tag",
             "s/S       sync/force sync",
-            "t         tag list",
         };
         static const char* page1[] = {
+            "t         tag list",
             "b         back",
             "i         inbox",
             "Bsp       sleep",
@@ -490,6 +504,31 @@ void uiHandleKey(char key) {
     lastActivityMs = millis();
 
     switch (state) {
+
+    // ── TAG_RENAME keys ──────────────────────────────────────────────────────
+    case UIState::TAG_RENAME:
+        if (key == Key::ENTER) {
+            String name = editBuf;
+            name.trim();
+            if (!name.isEmpty()) {
+                int tagIdx = g_storage.findTagByUUID(currentTagUUID);
+                if (tagIdx >= 0) {
+                    g_storage.renameTag(tagIdx, name);
+                    g_storage.save();
+                }
+            }
+            state = UIState::ROW_LIST;
+            dirty = true;
+        } else if (key == Key::ESCAPE) {
+            state = UIState::ROW_LIST;
+            dirty = true;
+        } else if (key == Key::BACKSPACE) {
+            if (!editBuf.isEmpty()) { editBuf.remove(editBuf.length() - 1); dirty = true; }
+        } else if (isPrintable(key)) {
+            editBuf += key;
+            dirty = true;
+        }
+        break;
 
     // ── TAG_NEW keys ─────────────────────────────────────────────────────────
     case UIState::TAG_NEW:
@@ -571,6 +610,14 @@ void uiHandleKey(char key) {
                     int idx = g_storage.ensureTag(ref);
                     openTag(g_storage.tags[idx].uuid);
                 }
+            }
+        } else if (key == 'r') {
+            // Rename current tag
+            int tagIdx = g_storage.findTagByUUID(currentTagUUID);
+            if (tagIdx >= 0) {
+                editBuf = g_storage.tags[tagIdx].name;
+                state   = UIState::TAG_RENAME;
+                dirty   = true;
             }
         } else if (key == 'n') {
             // New tag

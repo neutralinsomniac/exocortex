@@ -36,6 +36,7 @@ public:
     bool  toggleDone(int rowIdx);
     bool  deleteRow(int rowIdx);
     bool  deleteTag(int tagIdx);
+    bool  renameTag(int tagIdx, const String& newName);
     bool  swapRowRanks(int rowIdxA, int rowIdxB);
 
     // ── Sync ─────────────────────────────────────────────────────────────────

@@ -5,6 +5,7 @@ enum class UIState {
     BOOT,
     TAG_LIST,
     TAG_NEW,
+    TAG_RENAME,
     ROW_LIST,
     ROW_EDIT,
     SYNCING,
