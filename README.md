@@ -24,7 +24,7 @@ go install github.com/neutralinsomniac/exocortex/cmd/exo@latest
 Or with Nix:
 
 ```
-nix run github:neutralinsomniac/exocortex
+nix profile add github:neutralinsomniac/exocortex#exo
 ```
 
 To install into a NixOS configuration flake, add it as an input and pass it through to your NixOS module:
