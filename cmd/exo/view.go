@@ -26,6 +26,8 @@ func (m model) View() string {
 		return m.viewHelp()
 	case modeSearch:
 		return m.viewSearch()
+	case modeNotePopup:
+		return m.viewNotePopup()
 	}
 	return ""
 }
@@ -481,6 +483,97 @@ func (m model) viewMain() string {
 		boxContent(header, content, tw),
 	)
 	return box + "\n" + m.statusLine() + "\n" + m.hints()
+}
+
+func (m model) viewNotePopup() string {
+	bg := m.viewMain()
+
+	// Leave a 4-col margin on each side and a 2-row margin top/bottom.
+	// border(1 each side) + padding(1 each side) = 4 cols / 2 rows overhead.
+	noteContentW := m.width - 8 - 4   // total width - margins - border/padding
+	noteContentH := m.height - 4 - 2  // total height - margins - border/padding
+	// Reserve 4 lines for: header, rule, blank, close button.
+	textH := max(noteContentH-4, 1)
+
+	// Word-wrap each paragraph in the note separately.
+	var noteLines []string
+	for _, para := range strings.Split(m.notePopupRow.Note, "\n") {
+		if para == "" {
+			noteLines = append(noteLines, "")
+			continue
+		}
+		noteLines = append(noteLines, wrapText(para, noteContentW)...)
+	}
+	noteLines = fitLines(noteLines, textH, noteContentW)
+
+	closeBtn := "[ close ]"
+	closePad := strings.Repeat(" ", max((noteContentW-len(closeBtn))/2, 0))
+	closeLine := closePad + styleKey.Render(closeBtn)
+
+	rawLines := []string{
+		styleHeader.Render(" Note"),
+		rule(noteContentW, ""),
+	}
+	rawLines = append(rawLines, noteLines...)
+	rawLines = append(rawLines, "", closeLine)
+
+	// Pad every line to noteContentW so the box has a fixed, known width.
+	for i, l := range rawLines {
+		l = ansi.Truncate(l, noteContentW, "")
+		if sw := ansi.StringWidth(l); sw < noteContentW {
+			l += strings.Repeat(" ", noteContentW-sw)
+		}
+		rawLines[i] = l
+	}
+
+	popupBox := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("8")).
+		Padding(0, 1).
+		Render(strings.Join(rawLines, "\n"))
+
+	return overlayCenter(bg, popupBox, m.width, m.height)
+}
+
+// overlayCenter renders popup centered over bg (a newline-separated string of
+// bgH lines, each bgW visual columns wide).
+func overlayCenter(bg, popup string, bgW, bgH int) string {
+	bgLines := strings.Split(bg, "\n")
+	popLines := strings.Split(popup, "\n")
+
+	popH := len(popLines)
+	popW := 0
+	for _, l := range popLines {
+		if w := ansi.StringWidth(l); w > popW {
+			popW = w
+		}
+	}
+
+	startY := (bgH - popH) / 2
+	startX := (bgW - popW) / 2
+	if startX < 0 {
+		startX = 0
+	}
+
+	for i, popLine := range popLines {
+		y := startY + i
+		if y < 0 || y >= len(bgLines) {
+			continue
+		}
+		bgLines[y] = overlayLine(bgLines[y], popLine, startX)
+	}
+	return strings.Join(bgLines, "\n")
+}
+
+// overlayLine replaces the visual columns [startX, startX+width(overlay)) in bg
+// with overlay, padding bg with spaces if it is shorter than startX.
+func overlayLine(bg, overlay string, startX int) string {
+	left := ansi.Truncate(bg, startX, "")
+	if lw := ansi.StringWidth(left); lw < startX {
+		left += strings.Repeat(" ", startX-lw)
+	}
+	right := ansi.TruncateLeft(bg, startX+ansi.StringWidth(overlay), "")
+	return left + overlay + right
 }
 
 func (m model) viewInput() string {

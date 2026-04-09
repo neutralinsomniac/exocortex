@@ -53,6 +53,7 @@ const (
 	modeTagSelect
 	modeHelp
 	modeSearch
+	modeNotePopup
 )
 
 type pendingAction int
@@ -144,6 +145,9 @@ type model struct {
 	cursor     int
 	lineOffset int // scroll offset into mainContentLines
 	mode       viewMode
+
+	// note popup
+	notePopupRow db.Row // row whose note is being shown; zero value = no popup
 
 	// input mode
 	textInput     textinput.Model
@@ -743,7 +747,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.refresh()
 		}
 	case editorDoneMsg:
-		cmd = m.handleEditorDone(msg)
+		// Re-enable mouse after ExecProcess returns the terminal to us.
+		// RestoreTerminal restores altscreen but not mouse mode.
+		cmd = tea.Batch(m.handleEditorDone(msg), func() tea.Msg { return tea.EnableMouseCellMotion() })
+	case tea.MouseMsg:
+		if m.mode == modeMain || m.mode == modeNotePopup {
+			cmd = m.handleMouse(msg)
+		}
 	case tea.KeyMsg:
 		switch m.mode {
 		case modeMain:
@@ -756,6 +766,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.mode = modeMain
 		case modeSearch:
 			cmd = m.handleSearchKey(msg)
+		case modeNotePopup:
+			m.mode = modeMain
 		}
 	}
 	return m, cmd
@@ -799,7 +811,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	p := tea.NewProgram(newModel(exoDB), tea.WithAltScreen())
+	p := tea.NewProgram(newModel(exoDB), tea.WithAltScreen(), tea.WithMouseCellMotion())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
