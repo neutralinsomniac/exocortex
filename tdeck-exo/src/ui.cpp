@@ -776,7 +776,7 @@ void uiHandleKey(char key) {
             if (!syncRunning) {
                 syncRunning = true;
                 statusMsg   = "";
-                xTaskCreatePinnedToCore(syncTask, "sync", 8192, nullptr, 1, nullptr, 0);
+                xTaskCreatePinnedToCore(syncTask, "sync", 24576, nullptr, 1, nullptr, 0);
                 dirty = true;
             }
         } else if (key == 'S') {
@@ -784,7 +784,7 @@ void uiHandleKey(char key) {
             if (!syncRunning) {
                 syncRunning = true;
                 statusMsg   = "";
-                xTaskCreatePinnedToCore(forceSyncTask, "sync", 8192, nullptr, 1, nullptr, 0);
+                xTaskCreatePinnedToCore(forceSyncTask, "sync", 24576, nullptr, 1, nullptr, 0);
                 dirty = true;
             }
         } else if (key == 't') {
@@ -969,9 +969,17 @@ void uiInitHardware() {
     lcd.setRotation(1);
     lcd.setBrightness(200);
 
+    // Push the 150 KB framebuffer to PSRAM so internal DRAM stays available
+    // for mbedtls (TLS handshake) and other crypto-path allocations.
+    sprite.setPsram(true);
     sprite.createSprite(SCREEN_W, SCREEN_H);
     sprite.setFont(&lgfx::fonts::AsciiFont8x16);
     sprite.setTextSize(1);
+
+    Serial.printf("[boot] PSRAM=%s freePsram=%u freeHeap=%u\n",
+                  psramFound() ? "yes" : "no",
+                  (unsigned)ESP.getFreePsram(),
+                  (unsigned)ESP.getFreeHeap());
 
     state = UIState::BOOT;
     dirty = true;
