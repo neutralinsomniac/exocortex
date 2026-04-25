@@ -320,10 +320,23 @@ func (m *model) setInputWidth() {
 // afterCursorRank returns the rank at which a new row should be inserted so
 // that it appears immediately after the cursor. When the cursor is on a ref
 // row (or the list is empty) the row is appended after all direct rows.
+// New rows are always priority 0; when the cursor is on a priority row, we
+// target rank 0 so the new row sorts to the top of the priority-0 section
+// (priority-1..5 rows still sort above it regardless of rank). Using 0
+// avoids the latent UpdateRowRank no-op when stored ranks are non-contiguous
+// (e.g. after deletes) and the first priority-0 row's rank exceeds row count.
 func (m *model) afterCursorRank() int {
 	if m.cursor < len(m.rowItems) && !m.rowItems[m.cursor].isRef {
-		return m.rowItems[m.cursor].row.Rank + 1
+		cur := m.rowItems[m.cursor].row
+		if cur.Priority != 0 {
+			return 0
+		}
+		return cur.Rank + 1
 	}
+	return m.directRowCount()
+}
+
+func (m *model) directRowCount() int {
 	n := 0
 	for _, it := range m.rowItems {
 		if !it.isRef {

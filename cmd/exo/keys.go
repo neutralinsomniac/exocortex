@@ -475,7 +475,12 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 		m.mode = modeInput
 		m.pendingAction = actionInsertRow
 		if m.cursor < len(m.rowItems) && !m.rowItems[m.cursor].isRef {
-			m.pendingRank = m.rowItems[m.cursor].row.Rank
+			cur := m.rowItems[m.cursor].row
+			if cur.Priority != 0 {
+				m.pendingRank = 0
+			} else {
+				m.pendingRank = cur.Rank
+			}
 		} else {
 			m.pendingRank = 0
 		}
