@@ -27,10 +27,7 @@ func (e *ExoDB) Migrate() error {
 		`ALTER TABLE row ADD COLUMN done INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE row ADD COLUMN uuid TEXT NOT NULL DEFAULT ''`,
 		`CREATE TABLE IF NOT EXISTS row_tombstone (uuid TEXT PRIMARY KEY, deleted_ts INTEGER NOT NULL)`,
-		`CREATE TABLE IF NOT EXISTS tag_tombstone (name TEXT PRIMARY KEY, deleted_ts INTEGER NOT NULL)`,
 		`ALTER TABLE tag ADD COLUMN uuid TEXT NOT NULL DEFAULT ''`,
-		`DROP TABLE IF EXISTS tag_tombstone`,
-		`CREATE TABLE IF NOT EXISTS tag_tombstone (uuid TEXT PRIMARY KEY, deleted_ts INTEGER NOT NULL)`,
 	}
 	for _, m := range migrations {
 		if _, err := e.conn.Exec(m); err != nil {
@@ -40,6 +37,9 @@ func (e *ExoDB) Migrate() error {
 			}
 		}
 	}
+	if err := e.migrateTagTombstone(); err != nil {
+		return err
+	}
 	if err := e.populateRowUUIDs(); err != nil {
 		return err
 	}
@@ -47,6 +47,48 @@ func (e *ExoDB) Migrate() error {
 		return err
 	}
 	return e.fixRowTimestamps()
+}
+
+// migrateTagTombstone ensures tag_tombstone is keyed by (uuid). If an older
+// (name)-keyed table exists from a prior schema, drop it; it predates UUIDs
+// and cannot be remapped reliably. Does nothing if the table is already
+// uuid-keyed, so existing tombstones survive subsequent startups.
+func (e *ExoDB) migrateTagTombstone() error {
+	rows, err := e.conn.Query("PRAGMA table_info(tag_tombstone)")
+	if err != nil {
+		return err
+	}
+	hasUUID := false
+	hasName := false
+	exists := false
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notnull, pk int
+		var dflt sql.NullString
+		if err = rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
+			rows.Close()
+			return err
+		}
+		exists = true
+		if name == "uuid" {
+			hasUUID = true
+		}
+		if name == "name" {
+			hasName = true
+		}
+	}
+	rows.Close()
+	if exists && hasUUID && !hasName {
+		return nil // already migrated; preserve existing rows
+	}
+	if exists {
+		if _, err = e.conn.Exec("DROP TABLE tag_tombstone"); err != nil {
+			return err
+		}
+	}
+	_, err = e.conn.Exec(`CREATE TABLE tag_tombstone (uuid TEXT PRIMARY KEY, deleted_ts INTEGER NOT NULL)`)
+	return err
 }
 
 // fixRowTimestamps assigns a current timestamp to any rows with a NULL or zero

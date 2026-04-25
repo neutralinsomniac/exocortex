@@ -210,7 +210,10 @@ func (e *ExoDB) ApplyChanges(p SyncPayload) error {
 			sqlCommitOrRollback(tx, upsertErr)
 			return upsertErr
 		}
-		tagIDMap[t.ID] = localID
+		// localID == 0 means our tombstone wins; skip rows for this tag.
+		if localID != 0 {
+			tagIDMap[t.ID] = localID
+		}
 	}
 
 	for _, r := range p.Rows {
@@ -255,7 +258,8 @@ func (e *ExoDB) ApplyChanges(p SyncPayload) error {
 
 // sqlUpsertTag creates or updates a tag by UUID (LWW on updated_ts).
 // A newer remote name overwrites the local name, propagating renames.
-// Returns the local tag ID.
+// Returns the local tag ID, or 0 if a local tag tombstone supersedes the
+// remote tag (caller should skip rows for that tag).
 func sqlUpsertTag(tx *sql.Tx, t Tag) (int64, error) {
 	var existing Tag
 	err := tx.QueryRow("SELECT id, name, updated_ts FROM tag WHERE uuid = ?", t.UUID).
@@ -280,6 +284,17 @@ func sqlUpsertTag(tx *sql.Tx, t Tag) (int64, error) {
 	}
 	if nameErr == nil {
 		return nameMatch.ID, nil
+	}
+
+	// If we have a tombstone for this UUID newer than the incoming tag, our
+	// deletion wins — don't resurrect a tag we've already deleted.
+	var tombstoneTS int64
+	tombErr := tx.QueryRow("SELECT deleted_ts FROM tag_tombstone WHERE uuid = ?", t.UUID).Scan(&tombstoneTS)
+	if tombErr == nil && tombstoneTS >= t.UpdatedTS {
+		return 0, nil
+	}
+	if tombErr != nil && tombErr != sql.ErrNoRows {
+		return 0, tombErr
 	}
 
 	// Truly new tag: insert it.

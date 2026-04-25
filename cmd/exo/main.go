@@ -186,6 +186,7 @@ var inputPrompts = map[pendingAction]string{
 	actionNewTag:    "New tag",
 	actionRenameTag: "Rename tag",
 	actionEditRow:   "Edit row",
+	actionEditNote:  "Edit note",
 }
 
 func newModel(exoDB *db.ExoDB) model {

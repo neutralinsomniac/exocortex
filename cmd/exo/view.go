@@ -413,7 +413,7 @@ func (m *model) pageCursor(dir int) {
 		if item.isRef {
 			indent = "   "
 		}
-		prefixW := ansi.StringWidth(indent) + 2
+		prefixW := ansi.StringWidth(indent) + 2 + 2 // priority tag (2) + bullet (2)
 		noteSuffixW := 0
 		if !item.isRef && item.row.Note != "" {
 			noteSuffixW = 2

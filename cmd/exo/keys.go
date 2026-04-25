@@ -540,16 +540,21 @@ func (m *model) handleMainKey(msg tea.KeyMsg) tea.Cmd {
 			priority int
 		}
 		var saved []savedRow
+		var deletedTargets []rowItem
 		for _, it := range targets {
-			tagID, tagName := m.rowTagContext(it)
-			saved = append(saved, savedRow{tagID, tagName, it.row.Text, it.row.Note, it.row.Rank, it.row.Priority})
 			if err := m.dbState.DeleteRowByID(it.row.ID); err != nil {
 				m.setErr(err.Error())
 				break
 			}
+			tagID, tagName := m.rowTagContext(it)
+			saved = append(saved, savedRow{tagID, tagName, it.row.Text, it.row.Note, it.row.Rank, it.row.Priority})
+			deletedTargets = append(deletedTargets, it)
+		}
+		if len(saved) == 0 {
+			break
 		}
 		m.snarfedRows = nil
-		for _, t := range targets {
+		for _, t := range deletedTargets {
 			m.snarfedRows = append(m.snarfedRows, t.row)
 		}
 		// Single undo entry restores all deleted rows.
